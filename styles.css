@@ -433,51 +433,103 @@
   aspect-ratio: 1 / 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
   box-sizing: border-box;
+  position: relative;
   transition:
     border-color 0.2s ease,
     color 0.2s ease,
     background 0.2s ease;
 }
 
-.arena-drop-zone-inner {
+/* Placeholder state */
+.arena-drop-zone-placeholder {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
   width: 100%;
+  height: 100%;
+  padding: 24px;
   box-sizing: border-box;
-  color: var(--text-faint);
-}
-
-.arena-drop-zone-icon {
-  font-size: 28px;
-  font-weight: 200;
-  line-height: 1;
-  color: var(--text-faint);
 }
 
 .arena-drop-zone-hint {
-  font-size: 12px;
+  font-size: 13px;
   margin: 0;
   text-align: center;
   color: var(--text-faint);
-  line-height: 1.4;
-  padding: 0 12px;
+  line-height: 1.6;
 }
 
+.arena-drop-zone-choose {
+  text-decoration: underline;
+  cursor: pointer;
+  color: var(--text-faint);
+  transition: color 0.15s ease;
+}
+
+.arena-drop-zone-choose:hover {
+  color: var(--text-normal);
+}
+
+/* Editing state */
+.arena-drop-zone-input-wrapper {
+  display: none;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.arena-drop-zone-editing .arena-drop-zone-placeholder {
+  display: none;
+}
+
+.arena-drop-zone-editing .arena-drop-zone-input-wrapper {
+  display: flex;
+}
+
+.arena-drop-zone-editing {
+  border-style: solid !important;
+  border-color: var(--background-modifier-border) !important;
+  cursor: text;
+}
+
+.arena-drop-zone-textarea {
+  flex: 1;
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 14px 16px;
+  font-size: 14px;
+  font-family: var(--font-interface);
+  line-height: 1.5;
+  color: var(--text-normal);
+  background: transparent;
+  box-sizing: border-box;
+}
+
+.arena-drop-zone-textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.arena-drop-zone-hint-bar {
+  padding: 8px 14px;
+  border-top: 1px solid var(--interactive-accent);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+/* Hover / active / drag-active */
 .arena-drop-zone:hover {
   border-color: var(--text-muted) !important;
   transform: none;
 }
 
 .arena-drop-zone:active {
-  border-color: var(--interactive-accent) !important;
-  background: var(--background-primary-alt);
-  transform: scale(0.98);
+  transform: none;
 }
 
 .arena-drop-zone.arena-drop-active {
@@ -485,9 +537,12 @@
   background: var(--background-primary-alt);
 }
 
-.arena-drop-zone.arena-drop-active .arena-drop-zone-inner,
-.arena-drop-zone.arena-drop-active .arena-drop-zone-icon,
+.arena-drop-zone.arena-drop-active .arena-drop-zone-placeholder,
 .arena-drop-zone.arena-drop-active .arena-drop-zone-hint {
+  color: var(--interactive-accent);
+}
+
+.arena-drop-zone.arena-drop-active .arena-drop-zone-choose {
   color: var(--interactive-accent);
 }
 

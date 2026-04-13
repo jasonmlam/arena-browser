@@ -575,13 +575,95 @@ class ArenaView extends ItemView {
     const dropZone = grid.createDiv({
       cls: "arena-drop-zone arena-block-card",
     });
-    const dropInner = dropZone.createDiv({ cls: "arena-drop-zone-inner" });
-    dropInner.createEl("span", { text: "+", cls: "arena-drop-zone-icon" });
-    dropInner.createEl("p", {
-      text: "Drag & drop files • Click to browse",
+
+    const fileInput = dropZone.createEl("input", { type: "file" });
+    fileInput.multiple = true;
+    fileInput.style.display = "none";
+    fileInput.addEventListener("change", async () => {
+      if (fileInput.files && fileInput.files.length > 0) {
+        await this.importFileList(fileInput.files, folder);
+      }
+      fileInput.value = "";
+    });
+
+    // Placeholder state
+    const placeholder = dropZone.createDiv({
+      cls: "arena-drop-zone-placeholder",
+    });
+    const placeholderText = placeholder.createEl("p", {
       cls: "arena-drop-zone-hint",
     });
-    this.setupDropZone(dropZone, folder, { clickTarget: dropZone });
+    placeholderText.appendText("Drop or ");
+    const chooseLink = placeholderText.createEl("span", {
+      text: "choose",
+      cls: "arena-drop-zone-choose",
+    });
+    placeholderText.appendText(
+      " files, paste a URL (image, video, or link) or type text here",
+    );
+
+    chooseLink.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      fileInput.click();
+    });
+
+    // Editing state
+    const inputWrapper = dropZone.createDiv({
+      cls: "arena-drop-zone-input-wrapper",
+    });
+    const textarea = inputWrapper.createEl("textarea", {
+      cls: "arena-drop-zone-textarea",
+    });
+    const hintBar = inputWrapper.createDiv({ cls: "arena-drop-zone-hint-bar" });
+    hintBar.createEl("span", { text: "SHIFT + ENTER FOR LINE BREAK" });
+
+    const activateEditing = () => {
+      dropZone.addClass("arena-drop-zone-editing");
+      textarea.focus();
+    };
+
+    const deactivateEditing = () => {
+      if (!textarea.value.trim()) {
+        dropZone.removeClass("arena-drop-zone-editing");
+      }
+    };
+
+    dropZone.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement;
+      if (target.closest(".arena-drop-zone-choose")) return;
+      if (target.closest("input")) return;
+      e.stopPropagation();
+      activateEditing();
+    });
+
+    textarea.addEventListener("keydown", async (e: KeyboardEvent) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const text = textarea.value.trim();
+        if (!text) return;
+
+        if (/^https?:\/\//.test(text)) {
+          if (this.isImageUrl(text)) {
+            await this.saveImageFromUrl(text, folder);
+          } else {
+            await this.saveUrlAsBookmark(text, folder);
+          }
+        } else {
+          await this.createTextBlock(text, folder);
+        }
+
+        textarea.value = "";
+        dropZone.removeClass("arena-drop-zone-editing");
+        this.render();
+      }
+    });
+
+    textarea.addEventListener("blur", () => {
+      deactivateEditing();
+    });
+
+    this.setupDropZone(dropZone, folder);
 
     for (const block of blocks) {
       this.renderBlockCard(grid, block);
@@ -919,6 +1001,23 @@ class ArenaView extends ItemView {
       console.error("Arena: failed to download image", url, err);
       new Notice("Failed to download image from URL");
     }
+  }
+
+  // ── Text Block Creation ────────────────────────────────────────────────────
+
+  async createTextBlock(text: string, folder: TFolder) {
+    const firstLine = text.split("\n")[0];
+    const slug =
+      firstLine
+        .slice(0, 60)
+        .replace(/[^\w\s-]/g, "")
+        .trim() || "note";
+    const safeName = this.sanitizeFileName(slug);
+    let destPath = normalizePath(`${folder.path}/${safeName}.md`);
+    destPath = await this.deduplicatePath(destPath);
+
+    await this.app.vault.create(destPath, text);
+    new Notice(`Created "${safeName}"`);
   }
 
   // ── Data helpers ───────────────────────────────────────────────────────────
