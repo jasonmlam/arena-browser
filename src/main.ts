@@ -167,10 +167,17 @@ export default class ArenaPlugin extends Plugin {
 
 // ─── Arena View ──────────────────────────────────────────────────────────────
 
+interface PendingBlock {
+  id: string;
+  label: string;
+  channel: string;
+}
+
 class ArenaView extends ItemView {
   plugin: ArenaPlugin;
   currentChannel: TFolder | null = null;
   navigationStack: TFolder[] = [];
+  pendingBlocks: PendingBlock[] = [];
 
   constructor(leaf: WorkspaceLeaf, plugin: ArenaPlugin) {
     super(leaf);
@@ -343,16 +350,6 @@ class ArenaView extends ItemView {
     });
 
     const grid = container.createDiv({ cls: "arena-grid" });
-    grid.style.setProperty(
-      "--arena-columns",
-      String(this.plugin.settings.gridColumns),
-    );
-    if (Platform.isMobile) {
-      grid.style.setProperty(
-        "--arena-columns-mobile",
-        String(Math.min(this.plugin.settings.gridColumns, 2)),
-      );
-    }
 
     if (channels.length === 0) {
       const empty = grid.createDiv({ cls: "arena-empty" });
@@ -655,16 +652,6 @@ class ArenaView extends ItemView {
       });
 
       const subGrid = subSection.createDiv({ cls: "arena-grid" });
-      subGrid.style.setProperty(
-        "--arena-columns",
-        String(this.plugin.settings.gridColumns),
-      );
-      if (Platform.isMobile) {
-        subGrid.style.setProperty(
-          "--arena-columns-mobile",
-          String(Math.min(this.plugin.settings.gridColumns, 2)),
-        );
-      }
 
       for (const sub of subChannels) {
         this.renderChannelCard(subGrid, sub);
@@ -683,16 +670,6 @@ class ArenaView extends ItemView {
     const grid = blockSection.createDiv({
       cls: "arena-grid arena-block-grid",
     });
-    grid.style.setProperty(
-      "--arena-columns",
-      String(this.plugin.settings.gridColumns),
-    );
-    if (Platform.isMobile) {
-      grid.style.setProperty(
-        "--arena-columns-mobile",
-        String(Math.min(this.plugin.settings.gridColumns, 2)),
-      );
-    }
 
     // Drop zone pinned to first position
     const dropZone = grid.createDiv({
@@ -753,26 +730,6 @@ class ArenaView extends ItemView {
       : "SHIFT + ENTER FOR LINE BREAK";
     const hintSpan = hintBar.createEl("span", { text: defaultHint });
 
-    const setLoading = (msg: string) => {
-      textarea.disabled = true;
-      hintSpan.setText(msg);
-      dropZone.addClass("arena-drop-zone-loading");
-      dropZone.removeClass("arena-drop-zone-success");
-    };
-
-    const setSuccess = () => {
-      hintSpan.setText("SAVED");
-      dropZone.removeClass("arena-drop-zone-loading");
-      dropZone.addClass("arena-drop-zone-success");
-    };
-
-    const resetState = () => {
-      textarea.disabled = false;
-      hintSpan.setText(defaultHint);
-      dropZone.removeClass("arena-drop-zone-loading");
-      dropZone.removeClass("arena-drop-zone-success");
-    };
-
     const activateEditing = () => {
       dropZone.addClass("arena-drop-zone-editing");
       textarea.focus();
@@ -798,24 +755,29 @@ class ArenaView extends ItemView {
         const text = textarea.value.trim();
         if (!text) return;
 
+        textarea.value = "";
+        dropZone.removeClass("arena-drop-zone-editing");
+
         if (/^https?:\/\//.test(text)) {
-          if (this.isImageUrl(text)) {
-            setLoading("SAVING IMAGE…");
-            await this.saveImageFromUrl(text, folder);
-          } else {
-            setLoading("FETCHING SCREENSHOT…");
-            await this.saveUrlAsBookmark(text, folder);
+          const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const label = this.isImageUrl(text) ? "Saving image…" : "Fetching link…";
+          this.pendingBlocks.push({ id: pendingId, label, channel: folder.path });
+          this.render();
+
+          try {
+            if (this.isImageUrl(text)) {
+              await this.saveImageFromUrl(text, folder);
+            } else {
+              await this.saveUrlAsBookmark(text, folder);
+            }
+          } finally {
+            this.pendingBlocks = this.pendingBlocks.filter((p) => p.id !== pendingId);
+            this.render();
           }
-          setSuccess();
-          await new Promise((r) => setTimeout(r, 700));
         } else {
           await this.createTextBlock(text, folder);
+          this.render();
         }
-
-        textarea.value = "";
-        resetState();
-        dropZone.removeClass("arena-drop-zone-editing");
-        this.render();
       }
     });
 
@@ -833,22 +795,26 @@ class ArenaView extends ItemView {
       deactivateEditing();
     });
 
-    this.setupDropZone(dropZone, folder, {
-      onUrlLoading: (msg: string) => {
-        dropZone.addClass("arena-drop-zone-editing");
-        setLoading(msg);
-      },
-      onUrlSuccess: async () => {
-        setSuccess();
-        await new Promise((r) => setTimeout(r, 700));
-        resetState();
-        dropZone.removeClass("arena-drop-zone-editing");
-      },
-    });
+    this.setupDropZone(dropZone, folder);
+
+    for (const pending of this.pendingBlocks.filter((p) => p.channel === folder.path)) {
+      this.renderPendingBlockCard(grid, pending);
+    }
 
     for (const block of blocks) {
       this.renderBlockCard(grid, block);
     }
+  }
+
+  renderPendingBlockCard(parent: HTMLElement, pending: PendingBlock) {
+    const card = parent.createDiv({ cls: "arena-card arena-block-card arena-block-pending" });
+    const preview = card.createDiv({ cls: "arena-block-preview" });
+    const spinner = preview.createDiv({ cls: "arena-pending-spinner" });
+    for (let i = 0; i < 8; i++) {
+      spinner.createEl("span");
+    }
+    const label = card.createDiv({ cls: "arena-block-label" });
+    label.createEl("span", { text: pending.label, cls: "arena-block-name arena-pending-label" });
   }
 
   renderBlockCard(parent: HTMLElement, block: BlockInfo) {
@@ -866,6 +832,7 @@ class ArenaView extends ItemView {
       case "markdown": {
         const fm = this.app.metadataCache.getFileCache(block.file)?.frontmatter;
         const coverPath = fm?.cover_image as string | undefined;
+        const sourcePlatform = fm?.source_platform as string | undefined;
         if (coverPath) {
           const coverFile = this.app.vault.getAbstractFileByPath(coverPath);
           if (coverFile instanceof TFile) {
@@ -873,6 +840,12 @@ class ArenaView extends ItemView {
             img.src = this.app.vault.getResourcePath(coverFile);
             img.alt = block.name;
             img.loading = "lazy";
+            if (sourcePlatform) {
+              preview.createEl("span", {
+                text: sourcePlatform,
+                cls: "arena-source-badge",
+              });
+            }
             break;
           }
         }
@@ -1035,17 +1008,21 @@ class ArenaView extends ItemView {
         (droppedUrl.startsWith("http://") || droppedUrl.startsWith("https://"))
       ) {
         const trimmedUrl = droppedUrl.trim();
-        if (this.isImageUrl(trimmedUrl)) {
-          options?.onUrlLoading?.("SAVING IMAGE…");
-          await this.saveImageFromUrl(trimmedUrl, targetFolder);
-        } else {
-          options?.onUrlLoading?.("FETCHING SCREENSHOT…");
-          await this.saveUrlAsBookmark(trimmedUrl, targetFolder);
-        }
-        if (options?.onUrlSuccess) {
-          await options.onUrlSuccess();
-        }
+        const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const label = this.isImageUrl(trimmedUrl) ? "Saving image…" : "Fetching link…";
+        this.pendingBlocks.push({ id: pendingId, label, channel: targetFolder.path });
         this.render();
+
+        try {
+          if (this.isImageUrl(trimmedUrl)) {
+            await this.saveImageFromUrl(trimmedUrl, targetFolder);
+          } else {
+            await this.saveUrlAsBookmark(trimmedUrl, targetFolder);
+          }
+        } finally {
+          this.pendingBlocks = this.pendingBlocks.filter((p) => p.id !== pendingId);
+          this.render();
+        }
         return;
       }
 
@@ -1153,14 +1130,23 @@ class ArenaView extends ItemView {
     let destPath = normalizePath(`${folder.path}/${safeName}.md`);
     destPath = await this.deduplicatePath(destPath);
 
-    // Fetch a screenshot via Apify and save it as the cover image.
+    // Fetch cover art: use oEmbed for Spotify/SoundCloud, Apify screenshot otherwise.
     // Cover images are stored in arena/assets/ so they don't appear as blocks.
+    const platform = this.detectPlatform(url);
     let coverImagePath = "";
-    const screenshotUrl = await this.fetchApifyScreenshot(url);
-    if (screenshotUrl) {
+    let coverArtUrl: string | null = null;
+
+    if (platform) {
+      coverArtUrl = await this.fetchOembedCoverArt(url, platform);
+    }
+    if (!coverArtUrl) {
+      coverArtUrl = await this.fetchApifyScreenshot(url);
+    }
+
+    if (coverArtUrl) {
       try {
         const imgResponse = await requestUrl({
-          url: screenshotUrl,
+          url: coverArtUrl,
           method: "GET",
         });
         const assetsFolder = normalizePath(
@@ -1169,12 +1155,12 @@ class ArenaView extends ItemView {
         if (!this.app.vault.getAbstractFileByPath(assetsFolder)) {
           await this.app.vault.createFolder(assetsFolder);
         }
-        let coverPath = normalizePath(`${assetsFolder}/${safeName}-cover.png`);
+        let coverPath = normalizePath(`${assetsFolder}/${safeName}-cover.jpg`);
         coverPath = await this.deduplicatePath(coverPath);
         await this.app.vault.createBinary(coverPath, imgResponse.arrayBuffer);
         coverImagePath = coverPath;
       } catch (err) {
-        console.warn("Arena: could not save screenshot", url, err);
+        console.warn("Arena: could not save cover art", url, err);
       }
     }
 
@@ -1185,6 +1171,7 @@ class ArenaView extends ItemView {
       `description: "${description.replace(/"/g, '\\"')}"`,
     ];
     if (ogImage) lines.push(`og_image: "${ogImage}"`);
+    if (platform) lines.push(`source_platform: "${platform}"`);
     lines.push(`cover_image: "${coverImagePath}"`);
     lines.push(
       `saved: ${new Date().toISOString()}`,
@@ -1198,6 +1185,37 @@ class ArenaView extends ItemView {
 
     await this.app.vault.create(destPath, lines.join("\n"));
     new Notice(`Bookmarked "${title}"`);
+  }
+
+  detectPlatform(url: string): string | null {
+    try {
+      const hostname = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+      if (hostname === "open.spotify.com" || hostname === "spotify.com")
+        return "SPOTIFY";
+      if (hostname === "soundcloud.com") return "SOUNDCLOUD";
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchOembedCoverArt(url: string, platform: string): Promise<string | null> {
+    try {
+      let oembedUrl = "";
+      if (platform === "SPOTIFY") {
+        oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`;
+      } else if (platform === "SOUNDCLOUD") {
+        oembedUrl = `https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(url)}`;
+      }
+      if (!oembedUrl) return null;
+
+      const response = await requestUrl({ url: oembedUrl, method: "GET" });
+      const data = response.json as { thumbnail_url?: string };
+      return data?.thumbnail_url ?? null;
+    } catch (err) {
+      console.warn("Arena: oEmbed fetch failed", url, err);
+      return null;
+    }
   }
 
   async fetchApifyScreenshot(url: string): Promise<string | null> {
@@ -1540,19 +1558,5 @@ class ArenaSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
-      .setName("Grid columns")
-      .setDesc("Number of columns in the channel/block grid")
-      .addSlider((slider) =>
-        slider
-          .setLimits(2, 5, 1)
-          .setValue(this.plugin.settings.gridColumns)
-          .setDynamicTooltip()
-          .onChange(async (value) => {
-            this.plugin.settings.gridColumns = value;
-            await this.plugin.saveSettings();
-            this.plugin.refreshViews();
-          }),
-      );
   }
 }
