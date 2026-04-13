@@ -59,10 +59,11 @@ vault/
 
 ## Roadmap
 
-- [ ] URL bookmarks with Open Graph previews
-- [ ] Cross-channel connections (blocks appearing in multiple channels)
-- [ ] Tag system with filtering
-- [ ] Search across all channels
-- [ ] Masonry layout option
-- [ ] Nested channels (sub-channels)
-- [ ] Keyboard navigation
+- URL bookmarks with Open Graph previews
+- Cross-channel connections (blocks appearing in multiple channels)
+- Tag system with filtering
+- Search across all channels
+- Masonry layout option
+- Nested channels (sub-channels)
+- Keyboard navigation
+

@@ -6,6 +6,7 @@
   max-width: 1200px;
   margin: 0 auto;
   font-family: var(--font-interface);
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ─── Header ──────────────────────────────────────────────────────────────── */
@@ -45,7 +46,6 @@
 
 .arena-btn {
   padding: 6px 14px;
-  border-radius: 4px;
   font-size: 13px;
   cursor: pointer;
   border: 1px solid var(--background-modifier-border);
@@ -58,17 +58,7 @@
 
 .arena-btn:hover {
   background: var(--background-modifier-hover);
-  border-color: var(--text-muted);
-}
-
-.arena-btn-primary {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-  border-color: var(--interactive-accent);
-}
-
-.arena-btn-primary:hover {
-  opacity: 0.9;
+  /* border-color: var(--text-muted); */
 }
 
 .arena-btn-ghost {
@@ -94,7 +84,6 @@
 
 .arena-card {
   border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   overflow: hidden;
   cursor: pointer;
   aspect-ratio: 1 / 1;
@@ -162,6 +151,9 @@
   flex-direction: column;
   gap: 2px;
   flex: 1;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .arena-card-title {
@@ -185,7 +177,6 @@
   flex-direction: column;
   padding: 16px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   background: var(--background-primary);
   transition:
     border-color 0.2s ease,
@@ -212,9 +203,8 @@
   aspect-ratio: 1 / 1;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: center;
   cursor: pointer;
-  border-radius: 6px;
   overflow: hidden;
   background: var(--background-primary);
   transition:
@@ -232,6 +222,9 @@
   flex-direction: column;
   gap: 2px;
   padding: 14px 16px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .arena-parent-meta {
@@ -249,9 +242,8 @@
   aspect-ratio: 1 / 1;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: center;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   cursor: pointer;
   transition:
     border-color 0.2s ease,
@@ -270,6 +262,9 @@
   flex-direction: column;
   gap: 2px;
   padding: 14px 16px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .arena-sub-channel-title {
@@ -309,6 +304,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: top center;
   display: block;
 }
 
@@ -341,12 +337,48 @@
   color: var(--text-faint);
   padding: 6px 12px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
 }
 
 .arena-block-label {
   padding: 10px 14px;
   border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Source button for blocks with URLs */
+.arena-source-btn {
+  position: absolute;
+  bottom: 48px;
+  left: 12px;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 10;
+}
+
+.arena-block-card {
+  position: relative;
+}
+
+.arena-block-card:hover .arena-source-btn {
+  opacity: 1;
+}
+
+.arena-source-btn:hover {
+  background: rgba(0, 0, 0, 0.95);
+}
+
+.theme-dark .arena-source-btn {
+  background: rgba(255, 255, 255, 0.9);
+  color: #000;
+}
+
+.theme-dark .arena-source-btn:hover {
+  background: rgba(255, 255, 255, 1);
 }
 
 .arena-block-name {
@@ -522,6 +554,32 @@
   flex-shrink: 0;
 }
 
+/* ─── Drop Zone Loading / Success States ──────────────────────────────────── */
+
+.arena-drop-zone-loading {
+  pointer-events: none;
+}
+
+.arena-drop-zone-loading .arena-drop-zone-hint-bar {
+  color: var(--text-accent);
+  border-color: var(--interactive-accent);
+  animation: arena-pulse 1.2s ease-in-out infinite;
+}
+
+.arena-drop-zone-success {
+  border-color: var(--color-green) !important;
+}
+
+.arena-drop-zone-success .arena-drop-zone-hint-bar {
+  color: var(--color-green);
+  border-color: var(--color-green);
+}
+
+@keyframes arena-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
 /* Hover / active / drag-active */
 .arena-drop-zone:hover {
   border-color: var(--text-muted) !important;
@@ -566,4 +624,189 @@
 .arena-empty p {
   margin: 0;
   font-size: 14px;
+}
+
+/* ─── Mobile: Obsidian uses .is-mobile on <body> ─────────────────────────── */
+
+.is-mobile .arena-container {
+  padding: 16px;
+  max-width: 100%;
+}
+
+.is-mobile .arena-header {
+  margin-bottom: 20px;
+}
+
+.is-mobile .arena-title {
+  font-size: 22px;
+}
+
+.is-mobile .arena-title-row {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.is-mobile .arena-header-actions {
+  margin-top: 10px;
+}
+
+.is-mobile .arena-btn {
+  padding: 10px 18px;
+  font-size: 14px;
+  min-height: 44px;
+}
+
+/* Grid: 2 columns on mobile, respect override from JS */
+.is-mobile .arena-grid {
+  grid-template-columns: repeat(var(--arena-columns-mobile, 2), 1fr) !important;
+  gap: 10px;
+}
+
+/* Channel cards */
+.is-mobile .arena-card {
+  aspect-ratio: 1 / 1;
+}
+
+.is-mobile .arena-card-info {
+  padding: 10px 12px;
+}
+
+.is-mobile .arena-card-title {
+  font-size: 14px;
+}
+
+.is-mobile .arena-card-meta {
+  font-size: 11px;
+}
+
+/* Parent channel rows */
+.is-mobile .arena-parent-row {
+  padding: 12px;
+}
+
+.is-mobile .arena-parent-inner {
+  grid-template-columns: repeat(var(--arena-columns-mobile, 2), 1fr) !important;
+  gap: 10px;
+}
+
+.is-mobile .arena-parent-info {
+  padding: 10px 12px;
+}
+
+.is-mobile .arena-parent-card {
+  aspect-ratio: 1 / 1;
+}
+
+.is-mobile .arena-sub-channel-card {
+  aspect-ratio: 1 / 1;
+}
+
+.is-mobile .arena-sub-channel-info {
+  padding: 10px 12px;
+}
+
+.is-mobile .arena-sub-channel-title {
+  font-size: 13px;
+}
+
+/* Block cards */
+.is-mobile .arena-block-text {
+  padding: 10px 12px;
+}
+
+.is-mobile .arena-block-excerpt {
+  font-size: 11px;
+  -webkit-line-clamp: 4;
+}
+
+.is-mobile .arena-block-label {
+  padding: 8px 12px;
+}
+
+.is-mobile .arena-block-name {
+  font-size: 11px;
+}
+
+/* Source button on mobile - always visible */
+.is-mobile .arena-source-btn {
+  opacity: 1;
+  bottom: 42px;
+  left: 10px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+/* Breadcrumb */
+.is-mobile .arena-breadcrumb {
+  margin-bottom: 12px;
+  font-size: 14px;
+  gap: 2px;
+  min-height: 44px;
+  align-items: center;
+}
+
+.is-mobile .arena-breadcrumb-link {
+  padding: 4px 2px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Sections */
+.is-mobile .arena-section {
+  margin-top: 20px;
+}
+
+.is-mobile .arena-section-title {
+  font-size: 13px;
+}
+
+/* Drop zone */
+.is-mobile .arena-drop-zone {
+  aspect-ratio: auto;
+  min-height: 120px;
+}
+
+.is-mobile .arena-drop-zone-placeholder {
+  padding: 16px;
+}
+
+.is-mobile .arena-drop-zone-hint {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.is-mobile .arena-drop-zone-textarea {
+  font-size: 16px;
+  padding: 12px 14px;
+}
+
+.is-mobile .arena-drop-zone-hint-bar {
+  padding: 8px 12px;
+  font-size: 11px;
+}
+
+/* Empty state */
+.is-mobile .arena-empty {
+  padding: 40px 16px;
+}
+
+/* Phone-sized screens: single column for parent rows */
+.is-phone .arena-parent-inner {
+  grid-template-columns: repeat(var(--arena-columns-mobile, 2), 1fr) !important;
+}
+
+/* Very narrow viewports */
+@media screen and (max-width: 400px) {
+  .is-mobile .arena-container {
+    padding: 12px;
+  }
+
+  .is-mobile .arena-grid {
+    gap: 8px;
+  }
+
+  .is-mobile .arena-parent-inner {
+    gap: 8px;
+  }
 }

@@ -11,6 +11,7 @@ import {
   Setting,
   PluginSettingTab,
   App,
+  Platform,
   normalizePath,
   requestUrl,
 } from "obsidian";
@@ -209,6 +210,53 @@ class ArenaView extends ItemView {
     this.contentEl.empty();
   }
 
+  // ── Touch helpers ──────────────────────────────────────────────────────────
+
+  addLongPress(el: HTMLElement, callback: (e: TouchEvent) => void, ms = 500) {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let moved = false;
+
+    el.addEventListener(
+      "touchstart",
+      (e) => {
+        moved = false;
+        timer = setTimeout(() => {
+          if (!moved) {
+            e.preventDefault();
+            callback(e);
+          }
+        }, ms);
+      },
+      { passive: false },
+    );
+
+    el.addEventListener("touchmove", () => {
+      moved = true;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    });
+
+    el.addEventListener("touchend", () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    });
+
+    el.addEventListener("touchcancel", () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    });
+  }
+
+  showContextMenuAtPoint(x: number, y: number, menu: Menu) {
+    (menu as any).showAtPosition({ x, y });
+  }
+
   // ── Rendering ──────────────────────────────────────────────────────────────
 
   async render() {
@@ -287,8 +335,8 @@ class ArenaView extends ItemView {
 
     const actions = header.createDiv({ cls: "arena-header-actions" });
     const newBtn = actions.createEl("button", {
-      text: "+ New channel",
-      cls: "arena-btn arena-btn-primary",
+      text: "New channel +",
+      cls: "arena-btn",
     });
     newBtn.addEventListener("click", () => {
       this.plugin.createChannelDialog();
@@ -299,6 +347,12 @@ class ArenaView extends ItemView {
       "--arena-columns",
       String(this.plugin.settings.gridColumns),
     );
+    if (Platform.isMobile) {
+      grid.style.setProperty(
+        "--arena-columns-mobile",
+        String(Math.min(this.plugin.settings.gridColumns, 2)),
+      );
+    }
 
     if (channels.length === 0) {
       const empty = grid.createDiv({ cls: "arena-empty" });
@@ -328,6 +382,16 @@ class ArenaView extends ItemView {
       e.stopPropagation();
       this.showChannelContextMenu(e, channel);
     });
+
+    if (Platform.isMobile) {
+      this.addLongPress(wrapper, (e) => {
+        const touch = e.touches[0] || e.changedTouches[0];
+        if (touch) {
+          const menu = this.buildChannelContextMenu(channel);
+          this.showContextMenuAtPoint(touch.clientX, touch.clientY, menu);
+        }
+      });
+    }
 
     // Inner row: parent card on left, sub-channels on right
     const innerRow = wrapper.createDiv({ cls: "arena-parent-inner" });
@@ -392,7 +456,7 @@ class ArenaView extends ItemView {
     }
   }
 
-  showChannelContextMenu(e: MouseEvent, channel: ChannelInfo) {
+  buildChannelContextMenu(channel: ChannelInfo): Menu {
     const menu = new Menu();
 
     menu.addItem((item) =>
@@ -438,7 +502,44 @@ class ArenaView extends ItemView {
         }),
     );
 
+    return menu;
+  }
+
+  showChannelContextMenu(e: MouseEvent, channel: ChannelInfo) {
+    const menu = this.buildChannelContextMenu(channel);
     menu.showAtMouseEvent(e);
+  }
+
+  buildBlockContextMenu(block: BlockInfo): Menu {
+    const menu = new Menu();
+
+    menu.addItem((item) =>
+      item
+        .setTitle("Open file")
+        .setIcon("file")
+        .onClick(() =>
+          this.app.workspace.openLinkText(block.file.path, "", false),
+        ),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle("Open in new tab")
+        .setIcon("file-plus")
+        .onClick(() =>
+          this.app.workspace.openLinkText(block.file.path, "", "tab"),
+        ),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle("Remove from channel")
+        .setIcon("trash")
+        .onClick(async () => {
+          await this.app.vault.trash(block.file, true);
+          this.render();
+        }),
+    );
+
+    return menu;
   }
 
   getChannelAuthor(channel: ChannelInfo): string {
@@ -449,26 +550,26 @@ class ArenaView extends ItemView {
   renderChannelCard(parent: HTMLElement, channel: ChannelInfo) {
     const card = parent.createDiv({ cls: "arena-card arena-channel-card" });
 
-    if (channel.previewFiles.length > 0) {
-      const previews = card.createDiv({ cls: "arena-card-previews" });
-      for (const file of channel.previewFiles.slice(0, 4)) {
-        if (this.isImageFile(file)) {
-          const img = previews.createEl("img", {
-            cls: "arena-preview-thumb",
-          });
-          img.src = this.app.vault.getResourcePath(file);
-          img.alt = file.name;
-        } else {
-          const placeholder = previews.createDiv({
-            cls: "arena-preview-placeholder",
-          });
-          placeholder.createEl("span", {
-            text: file.extension.toUpperCase(),
-            cls: "arena-preview-ext",
-          });
-        }
-      }
-    }
+    // if (channel.previewFiles.length > 0) {
+    //   const previews = card.createDiv({ cls: "arena-card-previews" });
+    //   for (const file of channel.previewFiles.slice(0, 4)) {
+    //     if (this.isImageFile(file)) {
+    //       const img = previews.createEl("img", {
+    //         cls: "arena-preview-thumb",
+    //       });
+    //       img.src = this.app.vault.getResourcePath(file);
+    //       img.alt = file.name;
+    //     } else {
+    //       const placeholder = previews.createDiv({
+    //         cls: "arena-preview-placeholder",
+    //       });
+    //       placeholder.createEl("span", {
+    //         text: file.extension.toUpperCase(),
+    //         cls: "arena-preview-ext",
+    //       });
+    //     }
+    //   }
+    // }
 
     const info = card.createDiv({ cls: "arena-card-info" });
     info.createEl("h3", { text: channel.name, cls: "arena-card-title" });
@@ -500,6 +601,16 @@ class ArenaView extends ItemView {
       this.showChannelContextMenu(e, channel);
     });
 
+    if (Platform.isMobile) {
+      this.addLongPress(card, (e) => {
+        const touch = e.touches[0] || e.changedTouches[0];
+        if (touch) {
+          const menu = this.buildChannelContextMenu(channel);
+          this.showContextMenuAtPoint(touch.clientX, touch.clientY, menu);
+        }
+      });
+    }
+
     this.setupDropZone(card, channel.folder);
   }
 
@@ -528,7 +639,7 @@ class ArenaView extends ItemView {
 
     const actions = header.createDiv({ cls: "arena-header-actions" });
     const newSubBtn = actions.createEl("button", {
-      text: "+ Sub-channel",
+      text: "New channel +",
       cls: "arena-btn arena-btn-primary",
     });
     newSubBtn.addEventListener("click", () => {
@@ -548,6 +659,12 @@ class ArenaView extends ItemView {
         "--arena-columns",
         String(this.plugin.settings.gridColumns),
       );
+      if (Platform.isMobile) {
+        subGrid.style.setProperty(
+          "--arena-columns-mobile",
+          String(Math.min(this.plugin.settings.gridColumns, 2)),
+        );
+      }
 
       for (const sub of subChannels) {
         this.renderChannelCard(subGrid, sub);
@@ -570,6 +687,12 @@ class ArenaView extends ItemView {
       "--arena-columns",
       String(this.plugin.settings.gridColumns),
     );
+    if (Platform.isMobile) {
+      grid.style.setProperty(
+        "--arena-columns-mobile",
+        String(Math.min(this.plugin.settings.gridColumns, 2)),
+      );
+    }
 
     // Drop zone pinned to first position
     const dropZone = grid.createDiv({
@@ -593,14 +716,23 @@ class ArenaView extends ItemView {
     const placeholderText = placeholder.createEl("p", {
       cls: "arena-drop-zone-hint",
     });
-    placeholderText.appendText("Drop or ");
-    const chooseLink = placeholderText.createEl("span", {
-      text: "choose",
-      cls: "arena-drop-zone-choose",
-    });
-    placeholderText.appendText(
-      " files, paste a URL (image, video, or link) or type text here",
-    );
+    let chooseLink: HTMLElement;
+    if (Platform.isMobile) {
+      chooseLink = placeholderText.createEl("span", {
+        text: "Choose files",
+        cls: "arena-drop-zone-choose",
+      });
+      placeholderText.appendText(" or tap to type a URL or text");
+    } else {
+      placeholderText.appendText("Drop or ");
+      chooseLink = placeholderText.createEl("span", {
+        text: "choose",
+        cls: "arena-drop-zone-choose",
+      });
+      placeholderText.appendText(
+        " files, paste an image or URL (image, video, or link) or type text here",
+      );
+    }
 
     chooseLink.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -616,7 +748,30 @@ class ArenaView extends ItemView {
       cls: "arena-drop-zone-textarea",
     });
     const hintBar = inputWrapper.createDiv({ cls: "arena-drop-zone-hint-bar" });
-    hintBar.createEl("span", { text: "SHIFT + ENTER FOR LINE BREAK" });
+    const defaultHint = Platform.isMobile
+      ? "ENTER TO SUBMIT"
+      : "SHIFT + ENTER FOR LINE BREAK";
+    const hintSpan = hintBar.createEl("span", { text: defaultHint });
+
+    const setLoading = (msg: string) => {
+      textarea.disabled = true;
+      hintSpan.setText(msg);
+      dropZone.addClass("arena-drop-zone-loading");
+      dropZone.removeClass("arena-drop-zone-success");
+    };
+
+    const setSuccess = () => {
+      hintSpan.setText("SAVED");
+      dropZone.removeClass("arena-drop-zone-loading");
+      dropZone.addClass("arena-drop-zone-success");
+    };
+
+    const resetState = () => {
+      textarea.disabled = false;
+      hintSpan.setText(defaultHint);
+      dropZone.removeClass("arena-drop-zone-loading");
+      dropZone.removeClass("arena-drop-zone-success");
+    };
 
     const activateEditing = () => {
       dropZone.addClass("arena-drop-zone-editing");
@@ -645,17 +800,32 @@ class ArenaView extends ItemView {
 
         if (/^https?:\/\//.test(text)) {
           if (this.isImageUrl(text)) {
+            setLoading("SAVING IMAGE…");
             await this.saveImageFromUrl(text, folder);
           } else {
+            setLoading("FETCHING SCREENSHOT…");
             await this.saveUrlAsBookmark(text, folder);
           }
+          setSuccess();
+          await new Promise((r) => setTimeout(r, 700));
         } else {
           await this.createTextBlock(text, folder);
         }
 
         textarea.value = "";
+        resetState();
         dropZone.removeClass("arena-drop-zone-editing");
         this.render();
+      }
+    });
+
+    textarea.addEventListener("paste", async (e: ClipboardEvent) => {
+      if (!e.clipboardData) return;
+      const handled = await this.saveClipboardImage(e.clipboardData, folder);
+      if (handled) {
+        e.preventDefault();
+        textarea.value = "";
+        dropZone.removeClass("arena-drop-zone-editing");
       }
     });
 
@@ -663,7 +833,18 @@ class ArenaView extends ItemView {
       deactivateEditing();
     });
 
-    this.setupDropZone(dropZone, folder);
+    this.setupDropZone(dropZone, folder, {
+      onUrlLoading: (msg: string) => {
+        dropZone.addClass("arena-drop-zone-editing");
+        setLoading(msg);
+      },
+      onUrlSuccess: async () => {
+        setSuccess();
+        await new Promise((r) => setTimeout(r, 700));
+        resetState();
+        dropZone.removeClass("arena-drop-zone-editing");
+      },
+    });
 
     for (const block of blocks) {
       this.renderBlockCard(grid, block);
@@ -683,6 +864,18 @@ class ArenaView extends ItemView {
         break;
       }
       case "markdown": {
+        const fm = this.app.metadataCache.getFileCache(block.file)?.frontmatter;
+        const coverPath = fm?.cover_image as string | undefined;
+        if (coverPath) {
+          const coverFile = this.app.vault.getAbstractFileByPath(coverPath);
+          if (coverFile instanceof TFile) {
+            const img = preview.createEl("img", { cls: "arena-block-image" });
+            img.src = this.app.vault.getResourcePath(coverFile);
+            img.alt = block.name;
+            img.loading = "lazy";
+            break;
+          }
+        }
         preview.addClass("arena-block-text");
         this.app.vault.cachedRead(block.file).then((content) => {
           const stripped = content.replace(/^---[\s\S]*?---\n?/, "");
@@ -711,6 +904,18 @@ class ArenaView extends ItemView {
         });
     }
 
+    // Add Source button if block has a URL in frontmatter
+    const cache = this.app.metadataCache.getFileCache(block.file);
+    const url = cache?.frontmatter?.url;
+    if (url && typeof url === "string") {
+      const sourceBtn = card.createDiv({ cls: "arena-source-btn" });
+      sourceBtn.createEl("span", { text: "Source" });
+      sourceBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        window.open(url, "_blank");
+      });
+    }
+
     const label = card.createDiv({ cls: "arena-block-label" });
     label.createEl("span", { text: block.name, cls: "arena-block-name" });
 
@@ -722,38 +927,23 @@ class ArenaView extends ItemView {
     card.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const menu = new Menu();
-
-      menu.addItem((item) =>
-        item
-          .setTitle("Open file")
-          .setIcon("file")
-          .onClick(() =>
-            this.app.workspace.openLinkText(block.file.path, "", false),
-          ),
-      );
-      menu.addItem((item) =>
-        item
-          .setTitle("Open in new tab")
-          .setIcon("file-plus")
-          .onClick(() =>
-            this.app.workspace.openLinkText(block.file.path, "", "tab"),
-          ),
-      );
-      menu.addItem((item) =>
-        item
-          .setTitle("Remove from channel")
-          .setIcon("trash")
-          .onClick(async () => {
-            await this.app.vault.trash(block.file, true);
-            this.render();
-          }),
-      );
-
+      const menu = this.buildBlockContextMenu(block);
       menu.showAtMouseEvent(e);
     });
 
-    card.setAttribute("draggable", "true");
+    if (Platform.isMobile) {
+      this.addLongPress(card, (e) => {
+        const touch = e.touches[0] || e.changedTouches[0];
+        if (touch) {
+          const menu = this.buildBlockContextMenu(block);
+          this.showContextMenuAtPoint(touch.clientX, touch.clientY, menu);
+        }
+      });
+    }
+
+    if (!Platform.isMobile) {
+      card.setAttribute("draggable", "true");
+    }
     card.addEventListener("dragstart", (e) => {
       if (e.dataTransfer) {
         e.dataTransfer.setData("text/arena-block-path", block.file.path);
@@ -771,7 +961,11 @@ class ArenaView extends ItemView {
   setupDropZone(
     el: HTMLElement,
     targetFolder: TFolder,
-    options?: { clickTarget?: HTMLElement },
+    options?: {
+      clickTarget?: HTMLElement;
+      onUrlLoading?: (msg: string) => void;
+      onUrlSuccess?: () => Promise<void>;
+    },
   ) {
     let dropCounter = 0;
 
@@ -842,9 +1036,14 @@ class ArenaView extends ItemView {
       ) {
         const trimmedUrl = droppedUrl.trim();
         if (this.isImageUrl(trimmedUrl)) {
+          options?.onUrlLoading?.("SAVING IMAGE…");
           await this.saveImageFromUrl(trimmedUrl, targetFolder);
         } else {
+          options?.onUrlLoading?.("FETCHING SCREENSHOT…");
           await this.saveUrlAsBookmark(trimmedUrl, targetFolder);
+        }
+        if (options?.onUrlSuccess) {
+          await options.onUrlSuccess();
         }
         this.render();
         return;
@@ -926,7 +1125,7 @@ class ArenaView extends ItemView {
         html.match(
           /<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i,
         ) || html.match(/<title[^>]*>([^<]+)<\/title>/i);
-      if (titleMatch) title = titleMatch[1].trim();
+      if (titleMatch) title = this.sanitizeMetaContent(titleMatch[1]);
 
       const descMatch =
         html.match(
@@ -935,7 +1134,7 @@ class ArenaView extends ItemView {
         html.match(
           /<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i,
         );
-      if (descMatch) description = descMatch[1].trim();
+      if (descMatch) description = this.sanitizeMetaContent(descMatch[1]);
 
       const imgMatch = html.match(
         /<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i,
@@ -954,6 +1153,31 @@ class ArenaView extends ItemView {
     let destPath = normalizePath(`${folder.path}/${safeName}.md`);
     destPath = await this.deduplicatePath(destPath);
 
+    // Fetch a screenshot via Apify and save it as the cover image.
+    // Cover images are stored in arena/assets/ so they don't appear as blocks.
+    let coverImagePath = "";
+    const screenshotUrl = await this.fetchApifyScreenshot(url);
+    if (screenshotUrl) {
+      try {
+        const imgResponse = await requestUrl({
+          url: screenshotUrl,
+          method: "GET",
+        });
+        const assetsFolder = normalizePath(
+          `${this.plugin.settings.rootFolder}/assets`,
+        );
+        if (!this.app.vault.getAbstractFileByPath(assetsFolder)) {
+          await this.app.vault.createFolder(assetsFolder);
+        }
+        let coverPath = normalizePath(`${assetsFolder}/${safeName}-cover.png`);
+        coverPath = await this.deduplicatePath(coverPath);
+        await this.app.vault.createBinary(coverPath, imgResponse.arrayBuffer);
+        coverImagePath = coverPath;
+      } catch (err) {
+        console.warn("Arena: could not save screenshot", url, err);
+      }
+    }
+
     const lines = [
       "---",
       `url: "${url}"`,
@@ -961,6 +1185,7 @@ class ArenaView extends ItemView {
       `description: "${description.replace(/"/g, '\\"')}"`,
     ];
     if (ogImage) lines.push(`og_image: "${ogImage}"`);
+    lines.push(`cover_image: "${coverImagePath}"`);
     lines.push(
       `saved: ${new Date().toISOString()}`,
       `type: bookmark`,
@@ -973,6 +1198,36 @@ class ArenaView extends ItemView {
 
     await this.app.vault.create(destPath, lines.join("\n"));
     new Notice(`Bookmarked "${title}"`);
+  }
+
+  async fetchApifyScreenshot(url: string): Promise<string | null> {
+    const token = process.env.APIFY_TOKEN;
+    if (!token) return null;
+
+    try {
+      const response = await requestUrl({
+        url: `https://api.apify.com/v2/acts/apify~screenshot-url/run-sync-get-dataset-items?token=${token}`,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          urls: [{ url }],
+          waitUntil: "networkidle2",
+          delay: 0,
+          viewportWidth: 1280,
+          scrollToBottom: false,
+        }),
+        throw: false,
+      });
+
+      const items = response.json;
+      if (Array.isArray(items) && items.length > 0 && items[0].screenshotUrl) {
+        return items[0].screenshotUrl as string;
+      }
+    } catch (err) {
+      console.warn("Arena: Apify screenshot failed", url, err);
+    }
+
+    return null;
   }
 
   isImageUrl(url: string): boolean {
@@ -1003,6 +1258,42 @@ class ArenaView extends ItemView {
     }
   }
 
+  async saveClipboardImage(
+    clipboardData: DataTransfer,
+    folder: TFolder,
+  ): Promise<boolean> {
+    const items = Array.from(clipboardData.items);
+    const imageItem = items.find((item) => item.type.startsWith("image/"));
+    if (!imageItem) return false;
+
+    const blob = imageItem.getAsFile();
+    if (!blob) return false;
+
+    const mimeToExt: Record<string, string> = {
+      "image/png": "png",
+      "image/jpeg": "jpg",
+      "image/webp": "webp",
+      "image/gif": "gif",
+      "image/bmp": "bmp",
+    };
+    const ext = mimeToExt[imageItem.type] ?? "png";
+    const fileName = `pasted-image-${Date.now()}.${ext}`;
+    let destPath = normalizePath(`${folder.path}/${fileName}`);
+    destPath = await this.deduplicatePath(destPath);
+
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      await this.app.vault.createBinary(destPath, arrayBuffer);
+      new Notice(`Image added to ${folder.name}`);
+      this.render();
+      return true;
+    } catch (err) {
+      console.error("Arena: failed to save pasted image", err);
+      new Notice("Failed to save pasted image");
+      return false;
+    }
+  }
+
   // ── Text Block Creation ────────────────────────────────────────────────────
 
   async createTextBlock(text: string, folder: TFolder) {
@@ -1016,7 +1307,18 @@ class ArenaView extends ItemView {
     let destPath = normalizePath(`${folder.path}/${safeName}.md`);
     destPath = await this.deduplicatePath(destPath);
 
-    await this.app.vault.create(destPath, text);
+    const content = [
+      "---",
+      `cover_image: ""`,
+      `saved: ${new Date().toISOString()}`,
+      `type: text`,
+      "---",
+      "",
+      text,
+      "",
+    ].join("\n");
+
+    await this.app.vault.create(destPath, content);
     new Notice(`Created "${safeName}"`);
   }
 
@@ -1112,6 +1414,19 @@ class ArenaView extends ItemView {
     }
     this.currentChannel = folder;
     this.render();
+  }
+
+  sanitizeMetaContent(text: string): string {
+    return text
+      .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/[\r\n\t]+/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
   }
 
   sanitizeFileName(name: string): string {
