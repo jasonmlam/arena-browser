@@ -1,0 +1,19 @@
+{
+  "name": "obsidian-arena-browser",
+  "version": "0.1.0",
+  "description": "Browse vault folders as Are.na-style channels and blocks",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production"
+  },
+  "keywords": [],
+  "author": "Jason",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.21.0",
+    "obsidian": "latest",
+    "typescript": "^5.4.0"
+  }
+}

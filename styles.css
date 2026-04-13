@@ -1,0 +1,514 @@
+/* ─── Arena Browser Plugin Styles ─────────────────────────────────────────── */
+
+/* Container */
+.arena-container {
+  padding: 24px 32px;
+  max-width: 1200px;
+  margin: 0 auto;
+  font-family: var(--font-interface);
+}
+
+/* ─── Header ──────────────────────────────────────────────────────────────── */
+
+.arena-header {
+  margin-bottom: 28px;
+}
+
+.arena-title {
+  font-size: 28px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--text-normal);
+  margin: 0 0 4px 0;
+}
+
+.arena-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.arena-channel-count {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.arena-header-actions {
+  margin-top: 12px;
+}
+
+.arena-nav {
+  margin-bottom: 8px;
+}
+
+/* ─── Buttons ─────────────────────────────────────────────────────────────── */
+
+.arena-btn {
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.arena-btn:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--text-muted);
+}
+
+.arena-btn-primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.arena-btn-primary:hover {
+  opacity: 0.9;
+}
+
+.arena-btn-ghost {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 4px 8px;
+}
+
+.arena-btn-ghost:hover {
+  color: var(--text-normal);
+}
+
+/* ─── Grid ────────────────────────────────────────────────────────────────── */
+
+.arena-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--arena-columns, 3), 1fr);
+  gap: 16px;
+}
+
+/* ─── Channel Cards ───────────────────────────────────────────────────────── */
+
+.arena-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+  background: var(--background-primary);
+}
+
+.arena-card:hover {
+  border-color: var(--text-muted);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.theme-dark .arena-card:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.arena-channel-card {
+  /* aspect-ratio and flex come from .arena-card */
+}
+
+/* Preview thumbnails inside channel cards */
+.arena-card-previews {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+  flex: 1;
+  overflow: hidden;
+  background: var(--background-secondary);
+}
+
+.arena-preview-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.arena-preview-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--background-secondary-alt);
+}
+
+.arena-preview-ext {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+/* Card info section */
+.arena-card-info {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.arena-card-title {
+  font-size: 16px;
+  font-weight: 400;
+  margin: 0;
+  color: var(--text-accent);
+  line-height: 1.3;
+}
+
+.arena-card-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ─── Parent Channel Row (parent on left, sub-channels on right) ──────────── */
+
+.arena-parent-row {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.arena-parent-row:hover {
+  border-color: var(--text-muted);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.theme-dark .arena-parent-row:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.arena-parent-inner {
+  display: grid;
+  grid-template-columns: repeat(var(--arena-columns, 3), 1fr);
+  gap: 16px;
+}
+
+/* Parent card: same size as a regular channel card */
+.arena-parent-card {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  cursor: pointer;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--background-primary);
+  transition:
+    border-color 0.2s ease,
+    background 0.15s ease;
+}
+
+.arena-parent-card:hover {
+  border-color: var(--text-muted);
+  background: var(--background-secondary);
+}
+
+.arena-parent-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+}
+
+.arena-parent-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Sub-channels flow into the same grid as the parent card */
+.arena-parent-sub-grid {
+  display: contents;
+}
+
+.arena-sub-channel-card {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background 0.15s ease;
+  background: var(--background-primary);
+  overflow: hidden;
+}
+
+.arena-sub-channel-card:hover {
+  border-color: var(--text-muted);
+  background: var(--background-secondary);
+}
+
+.arena-sub-channel-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+}
+
+.arena-sub-channel-title {
+  font-size: 15px;
+  font-weight: 400;
+  margin: 0 0 4px 0;
+  color: var(--text-accent);
+  line-height: 1.3;
+}
+
+.arena-sub-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ─── Block Cards ─────────────────────────────────────────────────────────── */
+
+.arena-block-grid {
+  --arena-columns: 3;
+}
+
+.arena-block-card {
+  /* aspect-ratio and flex come from .arena-card */
+}
+
+.arena-block-preview {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--background-secondary);
+}
+
+.arena-block-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.arena-block-text {
+  padding: 12px 14px;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.arena-block-excerpt {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+}
+
+.arena-block-file {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.arena-file-icon {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+  padding: 6px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+}
+
+.arena-block-label {
+  padding: 10px 14px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.arena-block-name {
+  font-size: 12px;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+/* ─── Drag and Drop ───────────────────────────────────────────────────────── */
+
+.arena-drop-active {
+  outline: 2px dashed var(--interactive-accent) !important;
+  outline-offset: -2px;
+  opacity: 0.85;
+}
+
+.arena-card.arena-drop-active {
+  border-color: var(--interactive-accent);
+  background: var(--background-primary-alt);
+}
+
+.arena-dragging {
+  opacity: 0.5;
+  transform: scale(0.97);
+}
+
+/* drop hint replaced by arena-drop-zone */
+
+/* ─── Breadcrumb ──────────────────────────────────────────────────────────── */
+
+.arena-breadcrumb {
+  margin-bottom: 16px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0;
+}
+
+.arena-breadcrumb-link {
+  color: var(--text-accent);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.arena-breadcrumb-link:hover {
+  color: var(--text-normal);
+  text-decoration: underline;
+}
+
+.arena-breadcrumb-sep {
+  color: var(--text-faint);
+  margin: 0 2px;
+}
+
+.arena-breadcrumb-current {
+  color: var(--text-muted);
+}
+
+/* ─── Sections ────────────────────────────────────────────────────────────── */
+
+.arena-section {
+  margin-top: 24px;
+}
+
+.arena-section-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 12px 0;
+}
+
+/* ─── Drop Zone ───────────────────────────────────────────────────────────── */
+
+.arena-drop-zone {
+  border: 1.5px dashed var(--background-modifier-border) !important;
+  background: var(--background-primary);
+  cursor: pointer;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    background 0.2s ease;
+}
+
+.arena-drop-zone-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  color: var(--text-faint);
+}
+
+.arena-drop-zone-icon {
+  font-size: 28px;
+  font-weight: 200;
+  line-height: 1;
+  color: var(--text-faint);
+}
+
+.arena-drop-zone-hint {
+  font-size: 12px;
+  margin: 0;
+  text-align: center;
+  color: var(--text-faint);
+  line-height: 1.4;
+  padding: 0 12px;
+}
+
+.arena-drop-zone:hover {
+  border-color: var(--text-muted) !important;
+  transform: none;
+}
+
+.arena-drop-zone:active {
+  border-color: var(--interactive-accent) !important;
+  background: var(--background-primary-alt);
+  transform: scale(0.98);
+}
+
+.arena-drop-zone.arena-drop-active {
+  border-color: var(--interactive-accent) !important;
+  background: var(--background-primary-alt);
+}
+
+.arena-drop-zone.arena-drop-active .arena-drop-zone-inner,
+.arena-drop-zone.arena-drop-active .arena-drop-zone-icon,
+.arena-drop-zone.arena-drop-active .arena-drop-zone-hint {
+  color: var(--interactive-accent);
+}
+
+/* ─── Card meta row ───────────────────────────────────────────────────────── */
+
+.arena-card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+/* ─── Empty State ─────────────────────────────────────────────────────────── */
+
+.arena-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-faint);
+}
+
+.arena-empty p {
+  margin: 0;
+  font-size: 14px;
+}
