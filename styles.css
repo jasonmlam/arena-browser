@@ -76,7 +76,7 @@
 
 .arena-grid {
   display: grid;
-  grid-template-columns: repeat(var(--arena-columns, 3), 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(var(--arena-min-card, 220px), 1fr));
   gap: 16px;
 }
 
@@ -194,7 +194,7 @@
 
 .arena-parent-inner {
   display: grid;
-  grid-template-columns: repeat(var(--arena-columns, 3), 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(var(--arena-min-card, 220px), 1fr));
   gap: 16px;
 }
 
@@ -284,7 +284,7 @@
 /* ─── Block Cards ─────────────────────────────────────────────────────────── */
 
 .arena-block-grid {
-  --arena-columns: 3;
+  --arena-min-card: 240px;
 }
 
 .arena-block-card {
@@ -298,6 +298,7 @@
   justify-content: center;
   overflow: hidden;
   background: var(--background-secondary);
+  position: relative;
 }
 
 .arena-block-image {
@@ -342,6 +343,21 @@
 .arena-block-label {
   padding: 10px 14px;
   border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Platform badge (SPOTIFY / SOUNDCLOUD) shown on cover art */
+.arena-source-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  padding: 3px 7px;
+  pointer-events: none;
+  z-index: 2;
 }
 
 /* Source button for blocks with URLs */
@@ -580,6 +596,57 @@
   50% { opacity: 0.45; }
 }
 
+/* ─── Pending Block (loading placeholder) ──────────────────────────────────── */
+
+.arena-block-pending {
+  pointer-events: none;
+  border-style: solid !important;
+  border-color: var(--background-modifier-border) !important;
+  background: var(--background-primary);
+}
+
+.arena-block-pending .arena-block-preview {
+  background: var(--background-primary);
+}
+
+.arena-pending-spinner {
+  position: relative;
+  width: 24px;
+  height: 24px;
+}
+
+.arena-pending-spinner span {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 2px;
+  height: 7px;
+  margin-left: -1px;
+  background: var(--text-faint);
+  border-radius: 1px;
+  transform-origin: center 12px;
+  animation: arena-spinner-fade 0.8s linear infinite;
+}
+
+.arena-pending-spinner span:nth-child(1) { transform: rotate(0deg);   animation-delay: -0.7s; }
+.arena-pending-spinner span:nth-child(2) { transform: rotate(45deg);  animation-delay: -0.6s; }
+.arena-pending-spinner span:nth-child(3) { transform: rotate(90deg);  animation-delay: -0.5s; }
+.arena-pending-spinner span:nth-child(4) { transform: rotate(135deg); animation-delay: -0.4s; }
+.arena-pending-spinner span:nth-child(5) { transform: rotate(180deg); animation-delay: -0.3s; }
+.arena-pending-spinner span:nth-child(6) { transform: rotate(225deg); animation-delay: -0.2s; }
+.arena-pending-spinner span:nth-child(7) { transform: rotate(270deg); animation-delay: -0.1s; }
+.arena-pending-spinner span:nth-child(8) { transform: rotate(315deg); animation-delay: 0s; }
+
+@keyframes arena-spinner-fade {
+  0%, 39%, 100% { opacity: 0.15; }
+  40% { opacity: 1; }
+}
+
+.arena-pending-label {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
 /* Hover / active / drag-active */
 .arena-drop-zone:hover {
   border-color: var(--text-muted) !important;
@@ -656,9 +723,9 @@
   min-height: 44px;
 }
 
-/* Grid: 2 columns on mobile, respect override from JS */
+/* Grid: responsive on mobile with smaller minimum */
 .is-mobile .arena-grid {
-  grid-template-columns: repeat(var(--arena-columns-mobile, 2), 1fr) !important;
+  --arena-min-card: 160px;
   gap: 10px;
 }
 
@@ -685,7 +752,7 @@
 }
 
 .is-mobile .arena-parent-inner {
-  grid-template-columns: repeat(var(--arena-columns-mobile, 2), 1fr) !important;
+  --arena-min-card: 160px;
   gap: 10px;
 }
 
@@ -791,9 +858,9 @@
   padding: 40px 16px;
 }
 
-/* Phone-sized screens: single column for parent rows */
+/* Phone-sized screens */
 .is-phone .arena-parent-inner {
-  grid-template-columns: repeat(var(--arena-columns-mobile, 2), 1fr) !important;
+  --arena-min-card: 140px;
 }
 
 /* Very narrow viewports */
