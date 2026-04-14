@@ -41,4 +41,18 @@ vault/
 
 ## Settings
 
-- **Root folder**: The vault folder Arena Browser treats as its top level (default: `arena`)11
+- **Root folder**: The vault folder Arena Browser treats as its top level (default: `arena`)
+
+## Network usage
+
+Arena Browser makes outbound network requests in the following situations:
+
+- **URL bookmarks** — when you paste or drop an HTTP/HTTPS URL into a channel, the plugin fetches the page to read its `<title>` and Open Graph metadata (`og:title`, `og:description`, `og:image`). No data is sent; only an outbound GET is made to the URL you provided.
+- **Spotify & SoundCloud cover art** — for links from `open.spotify.com` and `soundcloud.com`, the plugin calls the platform's public oEmbed endpoint to retrieve the cover thumbnail URL, then downloads that image.
+- **Screenshot previews (optional)** — if you build the plugin with an `APIFY_TOKEN` set in your `.env` file, cover images for bookmarks are fetched via the [Apify](https://apify.com) screenshot API. No token is bundled in a release build unless you explicitly add one yourself.
+
+No analytics, telemetry, or tracking of any kind are collected or transmitted.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
