@@ -82,7 +82,7 @@ export default class ArenaPlugin extends Plugin {
     });
 
     this.addSettingTab(new ArenaSettingTab(this.app, this));
-    await this.ensureRootFolder();
+    this.app.workspace.onLayoutReady(() => this.ensureRootFolder());
   }
 
   onunload() {
@@ -108,9 +108,8 @@ export default class ArenaPlugin extends Plugin {
   }
 
   async ensureRootFolder() {
-    const root = this.settings.rootFolder;
-    const existing = this.app.vault.getAbstractFileByPath(root);
-    if (!existing) {
+    const root = normalizePath(this.settings.rootFolder);
+    if (!this.app.vault.getFolderByPath(root)) {
       await this.app.vault.createFolder(root);
     }
   }
@@ -154,14 +153,13 @@ export default class ArenaPlugin extends Plugin {
     new Notice(`Channel "${name}" created`);
     this.refreshViews();
 
-    return this.app.vault.getAbstractFileByPath(path) as TFolder;
+    return this.app.vault.getFolderByPath(path);
   }
 
   refreshViews() {
     this.app.workspace.getLeavesOfType(VIEW_TYPE_ARENA).forEach((leaf) => {
-      const view = leaf.view as ArenaView;
-      if (view && view.render) {
-        view.render();
+      if (leaf.view instanceof ArenaView) {
+        leaf.view.render();
       }
     });
   }
@@ -279,7 +277,7 @@ class ArenaView extends ItemView {
       await this.renderChannelGrid(container);
     }
 
-    this.leaf.updateHeader();
+    (this.leaf as any).updateHeader?.();
   }
 
   // ── Breadcrumb ─────────────────────────────────────────────────────────────
@@ -476,12 +474,12 @@ class ArenaView extends ItemView {
       item
         .setTitle("Reveal in file explorer")
         .setIcon("folder-search")
-        .onClick(() => {
-          const file = this.app.vault.getAbstractFileByPath(channel.path);
-          if (file) {
+          .onClick(() => {
+          const folder = this.app.vault.getFolderByPath(channel.path);
+          if (folder) {
             (this.app as any).internalPlugins?.plugins?.[
               "file-explorer"
-            ]?.instance?.revealInFolder?.(file);
+            ]?.instance?.revealInFolder?.(folder);
           }
         }),
     );
@@ -490,14 +488,15 @@ class ArenaView extends ItemView {
       item
         .setTitle("Delete channel")
         .setIcon("trash")
-        .onClick(async () => {
-          const confirmed = confirm(
+        .onClick(() => {
+          new ConfirmModal(
+            this.app,
             `Delete channel "${channel.name}" and all its contents?`,
-          );
-          if (confirmed) {
-            await this.app.vault.trash(channel.folder, true);
-            this.render();
-          }
+            async () => {
+              await this.app.vault.trash(channel.folder, true);
+              this.render();
+            },
+          ).open();
         }),
     );
 
@@ -680,7 +679,7 @@ class ArenaView extends ItemView {
 
     const fileInput = dropZone.createEl("input", { type: "file" });
     fileInput.multiple = true;
-    fileInput.style.display = "none";
+    fileInput.addClass("arena-file-input-hidden");
     fileInput.addEventListener("change", async () => {
       if (fileInput.files && fileInput.files.length > 0) {
         await this.importFileList(fileInput.files, folder);
@@ -851,8 +850,8 @@ class ArenaView extends ItemView {
         const coverPath = fm?.cover_image as string | undefined;
         const sourcePlatform = fm?.source_platform as string | undefined;
         if (coverPath) {
-          const coverFile = this.app.vault.getAbstractFileByPath(coverPath);
-          if (coverFile instanceof TFile) {
+          const coverFile = this.app.vault.getFileByPath(coverPath);
+          if (coverFile) {
             const img = preview.createEl("img", { cls: "arena-block-image" });
             img.src = this.app.vault.getResourcePath(coverFile);
             img.alt = block.name;
@@ -867,7 +866,8 @@ class ArenaView extends ItemView {
           }
         }
         preview.addClass("arena-block-text");
-        this.app.vault.cachedRead(block.file).then((content) => {
+        (async () => {
+          const content = await this.app.vault.cachedRead(block.file);
           const stripped = content.replace(/^---[\s\S]*?---\n?/, "");
           const lines = stripped.trim().split("\n").slice(0, 8).join("\n");
           const excerptEl = preview.createDiv({ cls: "arena-block-excerpt" });
@@ -876,9 +876,9 @@ class ArenaView extends ItemView {
             lines,
             excerptEl,
             block.file.path,
-            new Component()
+            new Component(),
           );
-        });
+        })();
         break;
       }
       case "pdf":
@@ -1010,8 +1010,8 @@ class ArenaView extends ItemView {
       // 1. Internal block move
       const internalPath = e.dataTransfer.getData("text/arena-block-path");
       if (internalPath) {
-        const file = this.app.vault.getAbstractFileByPath(internalPath);
-        if (file instanceof TFile) {
+        const file = this.app.vault.getFileByPath(internalPath);
+        if (file) {
           const newPath = normalizePath(`${targetFolder.path}/${file.name}`);
           if (file.path !== newPath) {
             await this.app.vault.rename(file, newPath);
@@ -1070,7 +1070,7 @@ class ArenaView extends ItemView {
     if (clickTarget) {
       const fileInput = el.createEl("input", { type: "file" });
       fileInput.multiple = true;
-      fileInput.style.display = "none";
+      fileInput.addClass("arena-file-input-hidden");
       fileInput.addEventListener("change", async () => {
         if (fileInput.files && fileInput.files.length > 0) {
           await this.importFileList(fileInput.files, targetFolder);
@@ -1184,7 +1184,7 @@ class ArenaView extends ItemView {
         const assetsFolder = normalizePath(
           `${this.plugin.settings.rootFolder}/assets`,
         );
-        if (!this.app.vault.getAbstractFileByPath(assetsFolder)) {
+        if (!this.app.vault.getFolderByPath(assetsFolder)) {
           await this.app.vault.createFolder(assetsFolder);
         }
         let coverPath = normalizePath(`${assetsFolder}/${safeName}-cover.jpg`);
@@ -1382,11 +1382,11 @@ class ArenaView extends ItemView {
   getChannels(parentFolder?: TFolder): ChannelInfo[] {
     const folder =
       parentFolder ||
-      (this.app.vault.getAbstractFileByPath(
-        this.plugin.settings.rootFolder,
-      ) as TFolder);
+      this.app.vault.getFolderByPath(
+        normalizePath(this.plugin.settings.rootFolder),
+      );
 
-    if (!(folder instanceof TFolder)) return [];
+    if (!folder) return [];
 
     const channels: ChannelInfo[] = [];
 
@@ -1566,6 +1566,41 @@ class CreateChannelModal extends Modal {
   }
 }
 
+// ─── Confirm Modal ───────────────────────────────────────────────────────────
+
+class ConfirmModal extends Modal {
+  private message: string;
+  private onConfirm: () => void;
+
+  constructor(app: App, message: string, onConfirm: () => void) {
+    super(app);
+    this.message = message;
+    this.onConfirm = onConfirm;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl("p", { text: this.message });
+    new Setting(contentEl)
+      .addButton((btn) =>
+        btn.setButtonText("Cancel").onClick(() => this.close()),
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText("Delete")
+          .setWarning()
+          .onClick(() => {
+            this.onConfirm();
+            this.close();
+          }),
+      );
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
 // ─── Settings Tab ────────────────────────────────────────────────────────────
 
 class ArenaSettingTab extends PluginSettingTab {
@@ -1580,7 +1615,7 @@ class ArenaSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Arena browser settings" });
+    new Setting(containerEl).setName("Arena browser settings").setHeading();
 
     new Setting(containerEl)
       .setName("Root folder")

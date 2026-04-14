@@ -1,5 +1,9 @@
 /* ─── Arena Browser Plugin Styles ─────────────────────────────────────────── */
 
+.arena-file-input-hidden {
+  display: none;
+}
+
 /* Container */
 .arena-container {
   padding: 24px 32px;
