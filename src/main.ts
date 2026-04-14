@@ -401,10 +401,6 @@ class ArenaView extends ItemView {
 
     const parentMeta = parentInfo.createDiv({ cls: "arena-parent-meta" });
     parentMeta.createEl("span", {
-      text: `by ${this.getChannelAuthor(channel)}`,
-      cls: "arena-card-meta",
-    });
-    parentMeta.createEl("span", {
       text: `${channel.blockCount} block${channel.blockCount !== 1 ? "s" : ""}`,
       cls: "arena-card-meta",
     });
@@ -432,10 +428,6 @@ class ArenaView extends ItemView {
         });
 
         const subMeta = subInfo.createDiv({ cls: "arena-sub-meta" });
-        subMeta.createEl("span", {
-          text: `by ${this.getChannelAuthor(sub)}`,
-          cls: "arena-card-meta",
-        });
         subMeta.createEl("span", {
           text: `${sub.blockCount} block${sub.blockCount !== 1 ? "s" : ""}`,
           cls: "arena-card-meta",
@@ -538,11 +530,6 @@ class ArenaView extends ItemView {
     );
 
     return menu;
-  }
-
-  getChannelAuthor(channel: ChannelInfo): string {
-    // Could be extended to read from frontmatter, for now return folder name's context
-    return "You";
   }
 
   renderChannelCard(parent: HTMLElement, channel: ChannelInfo) {
