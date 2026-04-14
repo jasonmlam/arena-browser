@@ -1,69 +1,44 @@
-# Arena Browser — Obsidian Plugin
+# Arena Browser
 
-Browse your vault folders as **Are.na-style channels and blocks** with drag-and-drop organization.
+Browse your vault as [Are.na](https://www.are.na/)-style channels and blocks — a visual, drag-and-drop way to organize files and folders in Obsidian.
 
-## What it does
+## Features
 
-Turns any vault folder into an Are.na-like visual browser. Subfolders become *channels*, files inside them become *blocks*. Images render as thumbnails, markdown shows text previews, and everything else shows a filetype badge.
+- Subfolders become **channels**, files inside them become **blocks**
+- Images render as thumbnails, markdown files show text previews, everything else shows a filetype badge
+- Drag files from Finder or your desktop directly into a channel
+- Drag blocks between channels to reorganize
+- Right-click channels and blocks for additional actions
 
-## Setup
+## Installation
 
-```bash
-# Clone into your vault's plugin directory
-cd /path/to/vault/.obsidian/plugins/
-git clone <repo-url> arena-browser
-cd arena-browser
+You can install the plugin via the Community Plugins tab within Obsidian. Search for "Arena Browser."
 
-# Install and build
-npm install
-npm run build
-
-# Or use dev mode (auto-rebuilds on change)
-npm run dev
-```
-
-Then enable "Arena Browser" in Obsidian → Settings → Community Plugins.
+To install manually, copy `main.js`, `styles.css`, and `manifest.json` into your vault at `.obsidian/plugins/arena-browser/`, then enable the plugin in Settings → Community Plugins.
 
 ## Usage
 
-1. **Open**: Click the grid icon in the ribbon, or use Command Palette → "Open Arena browser"
-2. **Create channels**: Click "+ New channel" or use Command Palette → "Create new channel"
-3. **Add blocks**: Drag files from Finder/desktop directly into a channel view
-4. **Move blocks**: Drag blocks between channels within the browser
-5. **Open files**: Click any block to open it in Obsidian's editor
-6. **Right-click**: Context menus on channels and blocks for additional actions
+After enabling the plugin, click the grid icon in the ribbon or use the Command Palette → **Open Arena browser**.
+
+- **Create a channel**: Click **+ New channel** or use Command Palette → _Create new channel_
+- **Add blocks**: Drag files from Finder or your desktop into a channel
+- **Move blocks**: Drag blocks between channels in the browser
+- **Open a file**: Click any block to open it in the editor
 
 ## Folder structure
 
+Arena Browser maps directly to your vault's folder structure. By default it looks for a folder named `arena` at your vault root:
+
 ```
 vault/
-└── arena/              ← root folder (configurable in settings)
+└── arena/
     ├── design-resources/
-    │   ├── _channel.md       ← channel metadata (auto-created)
     │   ├── screenshot.png
-    │   ├── reference.pdf
     │   └── notes.md
-    ├── gfx/
-    │   ├── _channel.md
-    │   ├── texture-01.png
-    │   └── shader-notes.md
-    └── websites/
-        ├── _channel.md
-        └── bookmarks.md
+    └── mood-board/
+        └── reference.pdf
 ```
 
 ## Settings
 
-- **Root folder**: Which vault folder contains your channels (default: `arena`)
-- **Grid columns**: Number of columns in the grid layout (2–5)
-
-## Roadmap
-
-- URL bookmarks with Open Graph previews
-- Cross-channel connections (blocks appearing in multiple channels)
-- Tag system with filtering
-- Search across all channels
-- Masonry layout option
-- Nested channels (sub-channels)
-- Keyboard navigation
-
+- **Root folder**: The vault folder Arena Browser treats as its top level (default: `arena`)11

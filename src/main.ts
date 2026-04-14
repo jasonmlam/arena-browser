@@ -14,6 +14,8 @@ import {
   Platform,
   normalizePath,
   requestUrl,
+  MarkdownRenderer,
+  Component,
 } from "obsidian";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -760,8 +762,14 @@ class ArenaView extends ItemView {
 
         if (/^https?:\/\//.test(text)) {
           const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          const label = this.isImageUrl(text) ? "Saving image…" : "Fetching link…";
-          this.pendingBlocks.push({ id: pendingId, label, channel: folder.path });
+          const label = this.isImageUrl(text)
+            ? "Saving image…"
+            : "Fetching link…";
+          this.pendingBlocks.push({
+            id: pendingId,
+            label,
+            channel: folder.path,
+          });
           this.render();
 
           try {
@@ -771,7 +779,9 @@ class ArenaView extends ItemView {
               await this.saveUrlAsBookmark(text, folder);
             }
           } finally {
-            this.pendingBlocks = this.pendingBlocks.filter((p) => p.id !== pendingId);
+            this.pendingBlocks = this.pendingBlocks.filter(
+              (p) => p.id !== pendingId,
+            );
             this.render();
           }
         } else {
@@ -797,7 +807,9 @@ class ArenaView extends ItemView {
 
     this.setupDropZone(dropZone, folder);
 
-    for (const pending of this.pendingBlocks.filter((p) => p.channel === folder.path)) {
+    for (const pending of this.pendingBlocks.filter(
+      (p) => p.channel === folder.path,
+    )) {
       this.renderPendingBlockCard(grid, pending);
     }
 
@@ -807,14 +819,19 @@ class ArenaView extends ItemView {
   }
 
   renderPendingBlockCard(parent: HTMLElement, pending: PendingBlock) {
-    const card = parent.createDiv({ cls: "arena-card arena-block-card arena-block-pending" });
+    const card = parent.createDiv({
+      cls: "arena-card arena-block-card arena-block-pending",
+    });
     const preview = card.createDiv({ cls: "arena-block-preview" });
     const spinner = preview.createDiv({ cls: "arena-pending-spinner" });
     for (let i = 0; i < 8; i++) {
       spinner.createEl("span");
     }
     const label = card.createDiv({ cls: "arena-block-label" });
-    label.createEl("span", { text: pending.label, cls: "arena-block-name arena-pending-label" });
+    label.createEl("span", {
+      text: pending.label,
+      cls: "arena-block-name arena-pending-label",
+    });
   }
 
   renderBlockCard(parent: HTMLElement, block: BlockInfo) {
@@ -852,8 +869,15 @@ class ArenaView extends ItemView {
         preview.addClass("arena-block-text");
         this.app.vault.cachedRead(block.file).then((content) => {
           const stripped = content.replace(/^---[\s\S]*?---\n?/, "");
-          const lines = stripped.trim().split("\n").slice(0, 6).join("\n");
-          preview.createEl("p", { text: lines, cls: "arena-block-excerpt" });
+          const lines = stripped.trim().split("\n").slice(0, 8).join("\n");
+          const excerptEl = preview.createDiv({ cls: "arena-block-excerpt" });
+          MarkdownRenderer.render(
+            this.app,
+            lines,
+            excerptEl,
+            block.file.path,
+            new Component()
+          );
         });
         break;
       }
@@ -1009,8 +1033,14 @@ class ArenaView extends ItemView {
       ) {
         const trimmedUrl = droppedUrl.trim();
         const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const label = this.isImageUrl(trimmedUrl) ? "Saving image…" : "Fetching link…";
-        this.pendingBlocks.push({ id: pendingId, label, channel: targetFolder.path });
+        const label = this.isImageUrl(trimmedUrl)
+          ? "Saving image…"
+          : "Fetching link…";
+        this.pendingBlocks.push({
+          id: pendingId,
+          label,
+          channel: targetFolder.path,
+        });
         this.render();
 
         try {
@@ -1020,7 +1050,9 @@ class ArenaView extends ItemView {
             await this.saveUrlAsBookmark(trimmedUrl, targetFolder);
           }
         } finally {
-          this.pendingBlocks = this.pendingBlocks.filter((p) => p.id !== pendingId);
+          this.pendingBlocks = this.pendingBlocks.filter(
+            (p) => p.id !== pendingId,
+          );
           this.render();
         }
         return;
@@ -1189,7 +1221,9 @@ class ArenaView extends ItemView {
 
   detectPlatform(url: string): string | null {
     try {
-      const hostname = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+      const hostname = new URL(url).hostname
+        .toLowerCase()
+        .replace(/^www\./, "");
       if (hostname === "open.spotify.com" || hostname === "spotify.com")
         return "SPOTIFY";
       if (hostname === "soundcloud.com") return "SOUNDCLOUD";
@@ -1199,7 +1233,10 @@ class ArenaView extends ItemView {
     }
   }
 
-  async fetchOembedCoverArt(url: string, platform: string): Promise<string | null> {
+  async fetchOembedCoverArt(
+    url: string,
+    platform: string,
+  ): Promise<string | null> {
     try {
       let oembedUrl = "";
       if (platform === "SPOTIFY") {
@@ -1557,6 +1594,5 @@ class ArenaSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }),
       );
-
   }
 }

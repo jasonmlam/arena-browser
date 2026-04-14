@@ -11,9 +11,13 @@
   "author": "Jason",
   "license": "MIT",
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
     "esbuild": "^0.21.0",
+    "jest": "^30.3.0",
     "obsidian": "latest",
+    "ts-jest": "^29.4.9",
+    "ts-node": "^10.9.2",
     "typescript": "^5.4.0"
   }
 }
