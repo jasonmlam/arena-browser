@@ -374,14 +374,20 @@ class ArenaView extends ItemView {
     // Outer bordered rectangle that wraps the parent + sub-channels
     const wrapper = parent.createDiv({ cls: "arena-parent-row" });
 
-    wrapper.addEventListener("contextmenu", (e) => {
+    // Inner row: parent card on left, sub-channels on right
+    const innerRow = wrapper.createDiv({ cls: "arena-parent-inner" });
+
+    // Parent channel square (left side, fixed size)
+    const parentCard = innerRow.createDiv({ cls: "arena-parent-card" });
+
+    parentCard.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       e.stopPropagation();
       this.showChannelContextMenu(e, channel);
     });
 
     if (Platform.isMobile) {
-      this.addLongPress(wrapper, (e) => {
+      this.addLongPress(parentCard, (e) => {
         const touch = e.touches[0] || e.changedTouches[0];
         if (touch) {
           const menu = this.buildChannelContextMenu(channel);
@@ -389,12 +395,6 @@ class ArenaView extends ItemView {
         }
       });
     }
-
-    // Inner row: parent card on left, sub-channels on right
-    const innerRow = wrapper.createDiv({ cls: "arena-parent-inner" });
-
-    // Parent channel square (left side, fixed size)
-    const parentCard = innerRow.createDiv({ cls: "arena-parent-card" });
 
     const parentInfo = parentCard.createDiv({ cls: "arena-parent-info" });
     parentInfo.createEl("h3", { text: channel.name, cls: "arena-card-title" });
@@ -441,6 +441,22 @@ class ArenaView extends ItemView {
           e.stopPropagation();
           this.openChannel(sub.folder);
         });
+
+        subCard.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.showChannelContextMenu(e, sub);
+        });
+
+        if (Platform.isMobile) {
+          this.addLongPress(subCard, (e) => {
+            const touch = e.touches[0] || e.changedTouches[0];
+            if (touch) {
+              const menu = this.buildChannelContextMenu(sub);
+              this.showContextMenuAtPoint(touch.clientX, touch.clientY, menu);
+            }
+          });
+        }
       }
     }
   }
