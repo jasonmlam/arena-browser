@@ -1,6 +1,8 @@
 # Arena Browser
 
-Browse your vault as [Are.na](https://www.are.na/)-style channels and blocks — a visual, drag-and-drop way to organize files and folders in Obsidian.
+Browse Obsidian as [Are.na](https://www.are.na/) inspired channels and blocks — a visual interface to reference and organize files in your vault.
+
+![](src/assets/demo.png)
 
 ## Features
 
