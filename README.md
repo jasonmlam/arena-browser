@@ -1,6 +1,6 @@
 # Arena Browser
 
-Browse Obsidian as [Are.na](https://www.are.na/) inspired channels and blocks — a visual interface to reference and organize files in your vault.
+Browse your vault with Are.na inspired channels and blocks - a visual interface to reference and organize files.
 
 ## Preview
 
