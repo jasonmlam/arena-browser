@@ -1,9 +1,9 @@
 {
-  "id": "obsidian-arena-browser",
+  "id": "arena-browser",
   "name": "Arena Browser",
   "version": "1.0.1",
   "minAppVersion": "1.5.0",
-  "description": "Create channels and sub-channels to collect links, images, and files — all stored privately inside your vault. Inspired by Are.na.",
+  "description": "Browse Obsidian with Are.na inspired channels and blocks — a visual interface to reference and organize files in your vault.",
   "author": "Jason",
   "isDesktopOnly": false
 }
