@@ -4,7 +4,6 @@ import {
   WorkspaceLeaf,
   TFolder,
   TFile,
-  TAbstractFile,
   Notice,
   Menu,
   Modal,
@@ -16,6 +15,8 @@ import {
   requestUrl,
   MarkdownRenderer,
   Component,
+  AbstractInputSuggest,
+  FuzzySuggestModal,
 } from "obsidian";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -26,6 +27,8 @@ const CHANNEL_META_FILE = "_channel.md";
 const DEFAULT_SETTINGS: ArenaPluginSettings = {
   rootFolder: "arena",
   apifyToken: "",
+  assetsFolder: "",
+  showAssetsInBrowser: false,
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -33,6 +36,10 @@ const DEFAULT_SETTINGS: ArenaPluginSettings = {
 interface ArenaPluginSettings {
   rootFolder: string;
   apifyToken: string;
+  /** Vault path for bookmark cover images. Empty means `<rootFolder>/assets`. */
+  assetsFolder: string;
+  /** When false, the assets folder is omitted from the channel list (if it appears as a subfolder). */
+  showAssetsInBrowser: boolean;
 }
 
 interface ChannelInfo {
@@ -51,6 +58,62 @@ interface BlockInfo {
   name: string;
 }
 
+function collectFolderPaths(folder: TFolder): string[] {
+  const paths: string[] = [folder.path];
+  for (const child of folder.children) {
+    if (child instanceof TFolder) {
+      paths.push(...collectFolderPaths(child));
+    }
+  }
+  return paths;
+}
+
+class FolderPathSuggest extends AbstractInputSuggest<string> {
+  private paths: string[];
+
+  constructor(app: App, inputEl: HTMLInputElement) {
+    super(app, inputEl);
+    this.paths = collectFolderPaths(app.vault.getRoot()).sort();
+  }
+
+  protected getSuggestions(query: string): string[] {
+    const q = query.toLowerCase().trim();
+    const list = q
+      ? this.paths.filter((p) => p.toLowerCase().contains(q))
+      : this.paths;
+    return list.slice(0, this.limit || 100);
+  }
+
+  renderSuggestion(value: string, el: HTMLElement): void {
+    el.setText(value);
+  }
+}
+
+class PickFolderModal extends FuzzySuggestModal<string> {
+  private folderPaths: string[];
+  private onPick: (path: string) => void;
+
+  constructor(app: App, folderPaths: string[], onPick: (path: string) => void) {
+    super(app);
+    this.folderPaths = folderPaths;
+    this.onPick = onPick;
+    this.setTitle("Choose folder");
+    this.setPlaceholder("Filter folders…");
+  }
+
+  getItems(): string[] {
+    return this.folderPaths;
+  }
+
+  getItemText(item: string): string {
+    return item;
+  }
+
+  onChooseItem(item: string, _evt: MouseEvent | KeyboardEvent): void {
+    this.onPick(item);
+  }
+}
+
 // ─── Plugin ──────────────────────────────────────────────────────────────────
 
 export default class ArenaPlugin extends Plugin {
@@ -61,13 +124,13 @@ export default class ArenaPlugin extends Plugin {
 
     this.registerView(VIEW_TYPE_ARENA, (leaf) => new ArenaView(leaf, this));
 
-    this.addRibbonIcon(ICON_ARENA, "Open Arena browser", () => {
-      this.activateView();
+    this.addRibbonIcon(ICON_ARENA, "Open arena browser", () => {
+      void this.activateView();
     });
 
     this.addCommand({
-      id: "open-arena-browser",
-      name: "Open Arena browser",
+      id: "open",
+      name: "Open view",
       callback: () => this.activateView(),
     });
 
@@ -84,11 +147,18 @@ export default class ArenaPlugin extends Plugin {
   onunload() {}
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()) as ArenaPluginSettings;
   }
 
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+
+  /** Resolved vault path for bookmark cover images and other plugin assets. */
+  getAssetsFolderPath(): string {
+    const raw = this.settings.assetsFolder?.trim();
+    if (raw) return normalizePath(raw);
+    return normalizePath(`${this.settings.rootFolder}/assets`);
   }
 
   async activateView() {
@@ -98,7 +168,7 @@ export default class ArenaPlugin extends Plugin {
       leaf = workspace.getLeaf(false);
       await leaf.setViewState({ type: VIEW_TYPE_ARENA, active: true });
     }
-    workspace.revealLeaf(leaf);
+    void workspace.revealLeaf(leaf);
   }
 
   async ensureRootFolder() {
@@ -108,9 +178,9 @@ export default class ArenaPlugin extends Plugin {
     }
   }
 
-  async createChannelDialog(parentFolder?: TFolder) {
-    const modal = new CreateChannelModal(this.app, async (name: string) => {
-      await this.createChannel(name, parentFolder);
+  createChannelDialog(parentFolder?: TFolder) {
+    const modal = new CreateChannelModal(this.app, (name: string) => {
+      void this.createChannel(name, parentFolder);
     });
     modal.open();
   }
@@ -194,6 +264,7 @@ class ArenaView extends ItemView {
   }
 
   async onOpen() {
+    await super.onOpen();
     this.render();
 
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -208,6 +279,7 @@ class ArenaView extends ItemView {
   }
 
   async onClose() {
+    await super.onClose();
     this.contentEl.empty();
   }
 
@@ -255,23 +327,23 @@ class ArenaView extends ItemView {
   }
 
   showContextMenuAtPoint(x: number, y: number, menu: Menu) {
-    (menu as any).showAtPosition({ x, y });
+    menu.showAtPosition({ x, y });
   }
 
   // ── Rendering ──────────────────────────────────────────────────────────────
 
-  async render() {
+  render() {
     const container = this.contentEl;
     container.empty();
     container.addClass("arena-container");
 
     if (this.currentChannel) {
-      await this.renderChannel(container, this.currentChannel);
+      this.renderChannel(container, this.currentChannel);
     } else {
-      await this.renderChannelGrid(container);
+      this.renderChannelGrid(container);
     }
 
-    (this.leaf as any).updateHeader?.();
+    (this.leaf as unknown as { updateHeader?: () => void }).updateHeader?.();
   }
 
   // ── Breadcrumb ─────────────────────────────────────────────────────────────
@@ -328,7 +400,7 @@ class ArenaView extends ItemView {
 
   // ── Channel Grid (home view) ───────────────────────────────────────────────
 
-  async renderChannelGrid(container: HTMLElement) {
+  renderChannelGrid(container: HTMLElement) {
     const channels = this.getChannels();
 
     const header = container.createDiv({ cls: "arena-header" });
@@ -500,9 +572,16 @@ class ArenaView extends ItemView {
         .onClick(() => this.plugin.createChannelDialog(channel.folder)),
     );
 
-    const fileExplorer = (this.app as any).internalPlugins?.plugins?.[
-      "file-explorer"
-    ]?.instance;
+    const fileExplorer = (
+      this.app as unknown as {
+        internalPlugins?: {
+          plugins?: Record<
+            string,
+            { instance?: { revealInFolder?: (f: TFolder) => void } }
+          >;
+        };
+      }
+    ).internalPlugins?.plugins?.["file-explorer"]?.instance;
     if (fileExplorer) {
       menu.addItem((item) =>
         item
@@ -523,9 +602,10 @@ class ArenaView extends ItemView {
           new ConfirmModal(
             this.app,
             `Delete channel "${channel.name}" and all its contents?`,
-            async () => {
-              await this.app.vault.trash(channel.folder, true);
-              this.render();
+            () => {
+              void this.app.fileManager
+                .trashFile(channel.folder)
+                .then(() => this.render());
             },
           ).open();
         }),
@@ -546,25 +626,26 @@ class ArenaView extends ItemView {
       item
         .setTitle("Open file")
         .setIcon("file")
-        .onClick(() =>
-          this.app.workspace.openLinkText(block.file.path, "", false),
-        ),
+        .onClick(() => {
+          void this.app.workspace.openLinkText(block.file.path, "", false);
+        }),
     );
     menu.addItem((item) =>
       item
         .setTitle("Open in new tab")
         .setIcon("file-plus")
-        .onClick(() =>
-          this.app.workspace.openLinkText(block.file.path, "", "tab"),
-        ),
+        .onClick(() => {
+          void this.app.workspace.openLinkText(block.file.path, "", "tab");
+        }),
     );
     menu.addItem((item) =>
       item
         .setTitle("Remove from channel")
         .setIcon("trash")
-        .onClick(async () => {
-          await this.app.vault.trash(block.file, true);
-          this.render();
+        .onClick(() => {
+          void this.app.fileManager
+            .trashFile(block.file)
+            .then(() => this.render());
         }),
     );
 
@@ -573,27 +654,6 @@ class ArenaView extends ItemView {
 
   renderChannelCard(parent: HTMLElement, channel: ChannelInfo) {
     const card = parent.createDiv({ cls: "arena-card arena-channel-card" });
-
-    // if (channel.previewFiles.length > 0) {
-    //   const previews = card.createDiv({ cls: "arena-card-previews" });
-    //   for (const file of channel.previewFiles.slice(0, 4)) {
-    //     if (this.isImageFile(file)) {
-    //       const img = previews.createEl("img", {
-    //         cls: "arena-preview-thumb",
-    //       });
-    //       img.src = this.app.vault.getResourcePath(file);
-    //       img.alt = file.name;
-    //     } else {
-    //       const placeholder = previews.createDiv({
-    //         cls: "arena-preview-placeholder",
-    //       });
-    //       placeholder.createEl("span", {
-    //         text: file.extension.toUpperCase(),
-    //         cls: "arena-preview-ext",
-    //       });
-    //     }
-    //   }
-    // }
 
     const info = card.createDiv({ cls: "arena-card-info" });
     info.createEl("h3", { text: channel.name, cls: "arena-card-title" });
@@ -640,7 +700,7 @@ class ArenaView extends ItemView {
 
   // ── Channel View (blocks + sub-channels) ───────────────────────────────────
 
-  async renderChannel(container: HTMLElement, folder: TFolder) {
+  renderChannel(container: HTMLElement, folder: TFolder) {
     const blocks = this.getBlocks(folder);
     const subChannels = this.getSubChannels(folder);
 
@@ -706,11 +766,12 @@ class ArenaView extends ItemView {
     const fileInput = dropZone.createEl("input", { type: "file" });
     fileInput.multiple = true;
     fileInput.addClass("arena-file-input-hidden");
-    fileInput.addEventListener("change", async () => {
+    fileInput.addEventListener("change", () => {
       if (fileInput.files && fileInput.files.length > 0) {
-        await this.importFileList(fileInput.files, folder);
+        void this.importFileList(fileInput.files, folder).then(() => {
+          fileInput.value = "";
+        });
       }
-      fileInput.value = "";
     });
 
     // Placeholder state
@@ -730,7 +791,7 @@ class ArenaView extends ItemView {
     } else {
       placeholderText.appendText("Drop or ");
       chooseLink = placeholderText.createEl("span", {
-        text: "choose",
+        text: "Choose",
         cls: "arena-drop-zone-choose",
       });
       placeholderText.appendText(
@@ -753,9 +814,9 @@ class ArenaView extends ItemView {
     });
     const hintBar = inputWrapper.createDiv({ cls: "arena-drop-zone-hint-bar" });
     const defaultHint = Platform.isMobile
-      ? "ENTER TO SUBMIT"
-      : "SHIFT + ENTER FOR LINE BREAK";
-    const hintSpan = hintBar.createEl("span", { text: defaultHint });
+      ? "Enter to submit"
+      : "Shift + Enter for line break";
+    hintBar.createEl("span", { text: defaultHint });
 
     const activateEditing = () => {
       dropZone.addClass("arena-drop-zone-editing");
@@ -776,7 +837,7 @@ class ArenaView extends ItemView {
       activateEditing();
     });
 
-    textarea.addEventListener("keydown", async (e: KeyboardEvent) => {
+    textarea.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         const text = textarea.value.trim();
@@ -797,33 +858,35 @@ class ArenaView extends ItemView {
           });
           this.render();
 
-          try {
-            if (this.isImageUrl(text)) {
-              await this.saveImageFromUrl(text, folder);
-            } else {
-              await this.saveUrlAsBookmark(text, folder);
+          void (async () => {
+            try {
+              if (this.isImageUrl(text)) {
+                await this.saveImageFromUrl(text, folder);
+              } else {
+                await this.saveUrlAsBookmark(text, folder);
+              }
+            } finally {
+              this.pendingBlocks = this.pendingBlocks.filter(
+                (p) => p.id !== pendingId,
+              );
+              this.render();
             }
-          } finally {
-            this.pendingBlocks = this.pendingBlocks.filter(
-              (p) => p.id !== pendingId,
-            );
-            this.render();
-          }
+          })();
         } else {
-          await this.createTextBlock(text, folder);
-          this.render();
+          void this.createTextBlock(text, folder).then(() => this.render());
         }
       }
     });
 
-    textarea.addEventListener("paste", async (e: ClipboardEvent) => {
+    textarea.addEventListener("paste", (e: ClipboardEvent) => {
       if (!e.clipboardData) return;
-      const handled = await this.saveClipboardImage(e.clipboardData, folder);
-      if (handled) {
-        e.preventDefault();
-        textarea.value = "";
-        dropZone.removeClass("arena-drop-zone-editing");
-      }
+      const clipData = e.clipboardData;
+      const items = Array.from(clipData.items);
+      if (!items.some((item) => item.type.startsWith("image/"))) return;
+      e.preventDefault();
+      textarea.value = "";
+      dropZone.removeClass("arena-drop-zone-editing");
+      void this.saveClipboardImage(clipData, folder);
     });
 
     textarea.addEventListener("blur", () => {
@@ -892,17 +955,19 @@ class ArenaView extends ItemView {
           }
         }
         preview.addClass("arena-block-text");
-        (async () => {
+        void (async () => {
           const content = await this.app.vault.cachedRead(block.file);
           const stripped = content.replace(/^---[\s\S]*?---\n?/, "");
           const lines = stripped.trim().split("\n").slice(0, 8).join("\n");
           const excerptEl = preview.createDiv({ cls: "arena-block-excerpt" });
-          MarkdownRenderer.render(
+          const comp = new Component();
+          comp.load();
+          await MarkdownRenderer.render(
             this.app,
             lines,
             excerptEl,
             block.file.path,
-            new Component(),
+            comp,
           );
         })();
         break;
@@ -929,7 +994,7 @@ class ArenaView extends ItemView {
 
     // Add Source button if block has a URL in frontmatter
     const cache = this.app.metadataCache.getFileCache(block.file);
-    const url = cache?.frontmatter?.url;
+    const url = cache?.frontmatter?.url as string | undefined;
     if (url && typeof url === "string") {
       const sourceBtn = card.createDiv({ cls: "arena-source-btn" });
       sourceBtn.createEl("span", { text: "Source" });
@@ -944,7 +1009,7 @@ class ArenaView extends ItemView {
 
     card.addEventListener("click", (e) => {
       e.stopPropagation();
-      this.app.workspace.openLinkText(block.file.path, "", false);
+      void this.app.workspace.openLinkText(block.file.path, "", false);
     });
 
     card.addEventListener("contextmenu", (e) => {
@@ -1024,7 +1089,7 @@ class ArenaView extends ItemView {
       }
     };
 
-    const onDrop = async (e: DragEvent) => {
+    const onDrop = (e: DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
@@ -1040,9 +1105,10 @@ class ArenaView extends ItemView {
         if (file) {
           const newPath = normalizePath(`${targetFolder.path}/${file.name}`);
           if (file.path !== newPath) {
-            await this.app.vault.rename(file, newPath);
-            new Notice(`Moved "${file.name}" to ${targetFolder.name}`);
-            this.render();
+            void this.app.vault.rename(file, newPath).then(() => {
+              new Notice(`Moved "${file.name}" to ${targetFolder.name}`);
+              this.render();
+            });
           }
         }
         return;
@@ -1069,25 +1135,27 @@ class ArenaView extends ItemView {
         });
         this.render();
 
-        try {
-          if (this.isImageUrl(trimmedUrl)) {
-            await this.saveImageFromUrl(trimmedUrl, targetFolder);
-          } else {
-            await this.saveUrlAsBookmark(trimmedUrl, targetFolder);
+        void (async () => {
+          try {
+            if (this.isImageUrl(trimmedUrl)) {
+              await this.saveImageFromUrl(trimmedUrl, targetFolder);
+            } else {
+              await this.saveUrlAsBookmark(trimmedUrl, targetFolder);
+            }
+          } finally {
+            this.pendingBlocks = this.pendingBlocks.filter(
+              (p) => p.id !== pendingId,
+            );
+            this.render();
           }
-        } finally {
-          this.pendingBlocks = this.pendingBlocks.filter(
-            (p) => p.id !== pendingId,
-          );
-          this.render();
-        }
+        })();
         return;
       }
 
       // 3. External file drops
       const files = e.dataTransfer.files;
       if (files && files.length > 0) {
-        await this.importFileList(files, targetFolder);
+        void this.importFileList(files, targetFolder);
         return;
       }
     };
@@ -1097,11 +1165,12 @@ class ArenaView extends ItemView {
       const fileInput = el.createEl("input", { type: "file" });
       fileInput.multiple = true;
       fileInput.addClass("arena-file-input-hidden");
-      fileInput.addEventListener("change", async () => {
+      fileInput.addEventListener("change", () => {
         if (fileInput.files && fileInput.files.length > 0) {
-          await this.importFileList(fileInput.files, targetFolder);
+          void this.importFileList(fileInput.files, targetFolder).then(() => {
+            fileInput.value = "";
+          });
         }
-        fileInput.value = "";
       });
 
       clickTarget.addEventListener("click", (e: MouseEvent) => {
@@ -1128,7 +1197,7 @@ class ArenaView extends ItemView {
         const arrayBuffer = await droppedFile.arrayBuffer();
         const fileName = this.sanitizeFileName(droppedFile.name);
         let destPath = normalizePath(`${targetFolder.path}/${fileName}`);
-        destPath = await this.deduplicatePath(destPath);
+        destPath = this.deduplicatePath(destPath);
 
         await this.app.vault.createBinary(destPath, arrayBuffer);
         added++;
@@ -1186,10 +1255,10 @@ class ArenaView extends ItemView {
         .trim() || "bookmark",
     );
     let destPath = normalizePath(`${folder.path}/${safeName}.md`);
-    destPath = await this.deduplicatePath(destPath);
+    destPath = this.deduplicatePath(destPath);
 
     // Fetch cover art: use oEmbed for Spotify/SoundCloud, Apify screenshot otherwise.
-    // Cover images are stored in arena/assets/ so they don't appear as blocks.
+    // Cover images are stored in the configured assets folder (hidden from channels by default).
     const platform = this.detectPlatform(url);
     let coverImagePath = "";
     let coverArtUrl: string | null = null;
@@ -1207,14 +1276,12 @@ class ArenaView extends ItemView {
           url: coverArtUrl,
           method: "GET",
         });
-        const assetsFolder = normalizePath(
-          `${this.plugin.settings.rootFolder}/assets`,
-        );
+        const assetsFolder = this.plugin.getAssetsFolderPath();
         if (!this.app.vault.getFolderByPath(assetsFolder)) {
           await this.app.vault.createFolder(assetsFolder);
         }
         let coverPath = normalizePath(`${assetsFolder}/${safeName}-cover.jpg`);
-        coverPath = await this.deduplicatePath(coverPath);
+        coverPath = this.deduplicatePath(coverPath);
         await this.app.vault.createBinary(coverPath, imgResponse.arrayBuffer);
         coverImagePath = coverPath;
       } catch {
@@ -1299,9 +1366,9 @@ class ArenaView extends ItemView {
         throw: false,
       });
 
-      const items = response.json;
+      const items = response.json as Array<{ screenshotUrl?: string }>;
       if (Array.isArray(items) && items.length > 0 && items[0].screenshotUrl) {
-        return items[0].screenshotUrl as string;
+        return items[0].screenshotUrl;
       }
     } catch {
       // screenshot failed — continue without cover image
@@ -1329,7 +1396,7 @@ class ArenaView extends ItemView {
       const baseName = extMatch ? rawName : rawName + ext;
       const fileName = this.sanitizeFileName(baseName);
       let destPath = normalizePath(`${folder.path}/${fileName}`);
-      destPath = await this.deduplicatePath(destPath);
+      destPath = this.deduplicatePath(destPath);
       await this.app.vault.createBinary(destPath, response.arrayBuffer);
       new Notice(`Saved image "${fileName}"`);
     } catch (err) {
@@ -1359,7 +1426,7 @@ class ArenaView extends ItemView {
     const ext = mimeToExt[imageItem.type] ?? "png";
     const fileName = `pasted-image-${Date.now()}.${ext}`;
     let destPath = normalizePath(`${folder.path}/${fileName}`);
-    destPath = await this.deduplicatePath(destPath);
+    destPath = this.deduplicatePath(destPath);
 
     try {
       const arrayBuffer = await blob.arrayBuffer();
@@ -1385,7 +1452,7 @@ class ArenaView extends ItemView {
         .trim() || "note";
     const safeName = this.sanitizeFileName(slug);
     let destPath = normalizePath(`${folder.path}/${safeName}.md`);
-    destPath = await this.deduplicatePath(destPath);
+    destPath = this.deduplicatePath(destPath);
 
     const content = [
       "---",
@@ -1414,13 +1481,15 @@ class ArenaView extends ItemView {
     if (!folder) return [];
 
     const channels: ChannelInfo[] = [];
-    const reservedAssetsPath = normalizePath(
-      `${this.plugin.settings.rootFolder}/assets`,
-    );
+    const reservedAssetsPath = normalizePath(this.plugin.getAssetsFolderPath());
 
     for (const child of folder.children) {
       if (!(child instanceof TFolder)) continue;
-      if (normalizePath(child.path) === reservedAssetsPath) continue;
+      if (
+        !this.plugin.settings.showAssetsInBrowser &&
+        normalizePath(child.path) === reservedAssetsPath
+      )
+        continue;
 
       const files = child.children.filter(
         (f): f is TFile => f instanceof TFile && f.name !== CHANNEL_META_FILE,
@@ -1434,9 +1503,12 @@ class ArenaView extends ItemView {
         .filter((f) => this.isImageFile(f))
         .slice(0, 4);
 
+      const firstChild = child.children[0];
+      const initialMtime =
+        firstChild instanceof TFile ? firstChild.stat.mtime : 0;
       const lastModified = files.reduce(
         (max, f) => Math.max(max, f.stat.mtime),
-        child.children[0] ? (child.children[0] as TFile).stat?.mtime || 0 : 0,
+        initialMtime,
       );
 
       channels.push({
@@ -1520,7 +1592,7 @@ class ArenaView extends ItemView {
       .trim();
   }
 
-  async deduplicatePath(path: string): Promise<string> {
+  deduplicatePath(path: string): string {
     let finalPath = path;
     let counter = 1;
     while (this.app.vault.getAbstractFileByPath(finalPath)) {
@@ -1565,7 +1637,7 @@ class CreateChannelModal extends Modal {
     let nameValue = "";
 
     new Setting(contentEl).setName("Channel name").addText((text) => {
-      text.setPlaceholder("e.g. design resources").onChange((value) => {
+      text.setPlaceholder("Design resources").onChange((value) => {
         nameValue = value;
       });
       text.inputEl.addEventListener("keydown", (e: KeyboardEvent) => {
@@ -1649,11 +1721,69 @@ class ArenaSettingTab extends PluginSettingTab {
       .setDesc("The vault folder that contains your channels")
       .addText((text) =>
         text
-          .setPlaceholder("arena")
+          .setPlaceholder("Arena")
           .setValue(this.plugin.settings.rootFolder)
           .onChange(async (value) => {
             this.plugin.settings.rootFolder = value || "arena";
             await this.plugin.saveSettings();
+            this.display();
+          }),
+      );
+
+    const defaultAssetsHint = normalizePath(
+      `${this.plugin.settings.rootFolder}/assets`,
+    );
+
+    new Setting(containerEl)
+      .setName("Assets folder")
+      .setDesc(
+        "Where bookmark cover images are stored (vault path). Leave empty to use the default path shown as the placeholder. Type to filter folders, or use browse.",
+      )
+      .addText((text) => {
+        text
+          .setPlaceholder(defaultAssetsHint)
+          .setValue(this.plugin.settings.assetsFolder);
+        const suggest = new FolderPathSuggest(this.app, text.inputEl);
+        suggest.onSelect(async (value) => {
+          this.plugin.settings.assetsFolder = value;
+          await this.plugin.saveSettings();
+        });
+        text.onChange(async (value) => {
+          this.plugin.settings.assetsFolder = value.trim();
+          await this.plugin.saveSettings();
+        });
+      })
+      .addExtraButton((btn) =>
+        btn
+          .setIcon("folder")
+          .setTooltip("Browse folders")
+          .onClick(() => {
+            const modal = new PickFolderModal(
+              this.app,
+              collectFolderPaths(this.app.vault.getRoot()),
+              (path) => {
+                this.plugin.settings.assetsFolder = path;
+                void this.plugin.saveSettings();
+                this.display();
+              },
+            );
+            modal.open();
+          }),
+      );
+
+    new Setting(containerEl)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case
+      .setName("Show assets folder in Arena Browser")
+      .setDesc(
+        "When off, the assets folder is omitted from the channel list. Turn on to open and manage cover images like any other channel.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showAssetsInBrowser)
+          .onChange(async (value) => {
+            this.plugin.settings.showAssetsInBrowser = value;
+            await this.plugin.saveSettings();
+            this.plugin.refreshViews();
           }),
       );
 
@@ -1664,7 +1794,7 @@ class ArenaSettingTab extends PluginSettingTab {
       )
       .addText((text) => {
         text
-          .setPlaceholder("apify_api_…")
+          .setPlaceholder("Apify API token")
           .setValue(this.plugin.settings.apifyToken)
           .onChange(async (value) => {
             this.plugin.settings.apifyToken = value.trim();
