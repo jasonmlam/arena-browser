@@ -2,7 +2,17 @@
 
 Browse Obsidian as [Are.na](https://www.are.na/) inspired channels and blocks — a visual interface to reference and organize files in your vault.
 
-![](src/assets/demo.png)
+## Preview
+
+<p align="center">
+  <img src="src/assets/demo.png" alt="Arena Browser desktop interface showing channels and blocks" width="720">
+  <em>Desktop View</em>
+</p>
+
+<p align="center">
+  <img src="src/assets/demo-phone.jpg" alt="Arena Browser on Obsidian mobile: channel list with thumbnails and navigation" width="300"><br>
+  <em>Mobile View</em>
+</p>
 
 ## Features
 
