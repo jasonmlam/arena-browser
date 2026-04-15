@@ -10,7 +10,7 @@ Browse Obsidian as [Are.na](https://www.are.na/) inspired channels and blocks â€
 </p>
 
 <p align="center">
-  <img src="src/assets/demo-phone.png" alt="Arena Browser on Obsidian mobile: channel list with thumbnails and navigation" width="300"><br>
+  <img src="src/assets/demo-phone.jpg" alt="Arena Browser on Obsidian mobile: channel list with thumbnails and navigation" width="300"><br>
   <em>Mobile View</em>
 </p>
 
