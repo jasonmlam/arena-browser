@@ -360,21 +360,34 @@ class ArenaView extends ItemView {
     }
 
     for (const channel of channels) {
-      if (channel.subChannelCount > 0) {
-        this.renderParentChannelCard(grid, channel);
-      } else {
-        this.renderChannelCard(grid, channel);
-      }
+      this.renderParentChannelCard(grid, channel);
     }
   }
 
   renderParentChannelCard(parent: HTMLElement, channel: ChannelInfo) {
-    const subChannels = this.getSubChannels(channel.folder).slice(0, 6);
-
     // Outer bordered rectangle that wraps the parent + sub-channels
     const wrapper = parent.createDiv({ cls: "arena-parent-row" });
 
-    // Inner row: parent card on left, sub-channels on right
+    // Compute how many columns fit so preview items never wrap to a new line.
+    // The parent card occupies one slot; remaining slots hold preview items.
+    const isMobile = Platform.isMobile;
+    const rowWidth = wrapper.clientWidth || parent.clientWidth || 800;
+    const innerPadding = isMobile ? 24 : 32; // padding: 12px or 16px per side
+    const minCard = isMobile ? 160 : 220;
+    const gap = isMobile ? 10 : 16;
+    const availableWidth = rowWidth - innerPadding;
+    const cols = Math.max(
+      1,
+      Math.floor((availableWidth + gap) / (minCard + gap)),
+    );
+    const PREVIEW_COUNT = Math.max(0, cols - 1);
+
+    const subChannels = this.getSubChannels(channel.folder).slice(
+      0,
+      PREVIEW_COUNT,
+    );
+
+    // Inner row: parent card on left, items on right
     const innerRow = wrapper.createDiv({ cls: "arena-parent-inner" });
 
     // Parent channel square (left side, fixed size)
@@ -414,10 +427,11 @@ class ArenaView extends ItemView {
       this.openChannel(channel.folder);
     });
 
-    // Sub-channels to the right of parent
-    if (subChannels.length > 0) {
-      const subGrid = innerRow.createDiv({ cls: "arena-parent-sub-grid" });
+    // Always render exactly PREVIEW_COUNT slots to the right; fill with
+    // sub-channels, then blocks, then blank placeholders.
+    const subGrid = innerRow.createDiv({ cls: "arena-parent-sub-grid" });
 
+    if (subChannels.length > 0) {
       for (const sub of subChannels) {
         const subCard = subGrid.createDiv({ cls: "arena-sub-channel-card" });
 
@@ -458,6 +472,20 @@ class ArenaView extends ItemView {
           });
         }
       }
+
+      for (let i = subChannels.length; i < PREVIEW_COUNT; i++) {
+        subGrid.createDiv({ cls: "arena-sub-channel-empty" });
+      }
+    } else {
+      const blocks = this.getBlocks(channel.folder).slice(0, PREVIEW_COUNT);
+
+      for (const block of blocks) {
+        this.renderBlockCard(subGrid, block);
+      }
+
+      for (let i = blocks.length; i < PREVIEW_COUNT; i++) {
+        subGrid.createDiv({ cls: "arena-sub-channel-empty" });
+      }
     }
   }
 
@@ -482,7 +510,7 @@ class ArenaView extends ItemView {
       item
         .setTitle("Reveal in file explorer")
         .setIcon("folder-search")
-          .onClick(() => {
+        .onClick(() => {
           const folder = this.app.vault.getFolderByPath(channel.path);
           if (folder) {
             (this.app as any).internalPlugins?.plugins?.[
@@ -1392,9 +1420,13 @@ class ArenaView extends ItemView {
     if (!folder) return [];
 
     const channels: ChannelInfo[] = [];
+    const reservedAssetsPath = normalizePath(
+      `${this.plugin.settings.rootFolder}/assets`,
+    );
 
     for (const child of folder.children) {
       if (!(child instanceof TFolder)) continue;
+      if (normalizePath(child.path) === reservedAssetsPath) continue;
 
       const files = child.children.filter(
         (f): f is TFile => f instanceof TFile && f.name !== CHANNEL_META_FILE,

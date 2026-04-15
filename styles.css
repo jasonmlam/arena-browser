@@ -317,6 +317,10 @@
   gap: 2px;
 }
 
+.arena-sub-channel-empty {
+  aspect-ratio: 1 / 1;
+}
+
 /* ─── Block Cards ─────────────────────────────────────────────────────────── */
 
 .arena-block-grid {

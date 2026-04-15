@@ -1,6 +1,6 @@
 {
   "name": "obsidian-arena-browser",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "description": "Browse vault folders as Are.na-style channels and blocks",
   "main": "main.js",
   "scripts": {
