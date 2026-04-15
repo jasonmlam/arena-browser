@@ -25,18 +25,14 @@ const ICON_ARENA = "layout-grid";
 const CHANNEL_META_FILE = "_channel.md";
 const DEFAULT_SETTINGS: ArenaPluginSettings = {
   rootFolder: "arena",
-  showHiddenFiles: false,
-  gridColumns: 4,
-  thumbnailSize: 280,
+  apifyToken: "",
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface ArenaPluginSettings {
   rootFolder: string;
-  showHiddenFiles: boolean;
-  gridColumns: number;
-  thumbnailSize: number;
+  apifyToken: string;
 }
 
 interface ChannelInfo {
@@ -85,9 +81,7 @@ export default class ArenaPlugin extends Plugin {
     this.app.workspace.onLayoutReady(() => this.ensureRootFolder());
   }
 
-  onunload() {
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE_ARENA);
-  }
+  onunload() {}
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -506,19 +500,20 @@ class ArenaView extends ItemView {
         .onClick(() => this.plugin.createChannelDialog(channel.folder)),
     );
 
-    menu.addItem((item) =>
-      item
-        .setTitle("Reveal in file explorer")
-        .setIcon("folder-search")
-        .onClick(() => {
-          const folder = this.app.vault.getFolderByPath(channel.path);
-          if (folder) {
-            (this.app as any).internalPlugins?.plugins?.[
-              "file-explorer"
-            ]?.instance?.revealInFolder?.(folder);
-          }
-        }),
-    );
+    const fileExplorer = (this.app as any).internalPlugins?.plugins?.[
+      "file-explorer"
+    ]?.instance;
+    if (fileExplorer) {
+      menu.addItem((item) =>
+        item
+          .setTitle("Reveal in file explorer")
+          .setIcon("folder-search")
+          .onClick(() => {
+            const folder = this.app.vault.getFolderByPath(channel.path);
+            if (folder) fileExplorer.revealInFolder?.(folder);
+          }),
+      );
+    }
 
     menu.addItem((item) =>
       item
@@ -1180,8 +1175,8 @@ class ArenaView extends ItemView {
         /<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i,
       );
       if (imgMatch) ogImage = imgMatch[1].trim();
-    } catch (err) {
-      console.warn("Arena: could not fetch URL metadata", url, err);
+    } catch {
+      // metadata fetch failed — continue with URL as fallback title
     }
 
     const safeName = this.sanitizeFileName(
@@ -1222,8 +1217,8 @@ class ArenaView extends ItemView {
         coverPath = await this.deduplicatePath(coverPath);
         await this.app.vault.createBinary(coverPath, imgResponse.arrayBuffer);
         coverImagePath = coverPath;
-      } catch (err) {
-        console.warn("Arena: could not save cover art", url, err);
+      } catch {
+        // cover art save failed — continue without cover image
       }
     }
 
@@ -1280,14 +1275,13 @@ class ArenaView extends ItemView {
       const response = await requestUrl({ url: oembedUrl, method: "GET" });
       const data = response.json as { thumbnail_url?: string };
       return data?.thumbnail_url ?? null;
-    } catch (err) {
-      console.warn("Arena: oEmbed fetch failed", url, err);
+    } catch {
       return null;
     }
   }
 
   async fetchApifyScreenshot(url: string): Promise<string | null> {
-    const token = process.env.APIFY_TOKEN;
+    const token = this.plugin.settings.apifyToken;
     if (!token) return null;
 
     try {
@@ -1309,8 +1303,8 @@ class ArenaView extends ItemView {
       if (Array.isArray(items) && items.length > 0 && items[0].screenshotUrl) {
         return items[0].screenshotUrl as string;
       }
-    } catch (err) {
-      console.warn("Arena: Apify screenshot failed", url, err);
+    } catch {
+      // screenshot failed — continue without cover image
     }
 
     return null;
@@ -1650,8 +1644,6 @@ class ArenaSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    new Setting(containerEl).setName("Arena browser settings").setHeading();
-
     new Setting(containerEl)
       .setName("Root folder")
       .setDesc("The vault folder that contains your channels")
@@ -1664,5 +1656,21 @@ class ArenaSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }),
       );
+
+    new Setting(containerEl)
+      .setName("Apify API token")
+      .setDesc(
+        "Optional. Used to generate website screenshots as cover images for bookmarks.",
+      )
+      .addText((text) => {
+        text
+          .setPlaceholder("apify_api_…")
+          .setValue(this.plugin.settings.apifyToken)
+          .onChange(async (value) => {
+            this.plugin.settings.apifyToken = value.trim();
+            await this.plugin.saveSettings();
+          });
+        text.inputEl.type = "password";
+      });
   }
 }

@@ -3,7 +3,7 @@
   "name": "Arena Browser",
   "version": "1.0.1",
   "minAppVersion": "1.5.0",
-  "description": "Browse Obsidian with Are.na inspired channels and blocks — a visual interface to reference and organize files in your vault.",
+  "description": "Browse your vault with Are.na-inspired channels and blocks, a visual interface to reference and organize files.",
   "author": "Jason",
   "isDesktopOnly": false
 }

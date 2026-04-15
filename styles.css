@@ -1,5 +1,24 @@
 /* ─── Arena Browser Plugin Styles ─────────────────────────────────────────── */
 
+/*
+  Plugin-level variables for elements that overlay image content (source badge,
+  source button). These intentionally contrast with image thumbnails, so no
+  single Obsidian token captures the intent. Themes can override them.
+*/
+:root {
+  --arena-overlay-bg: rgba(0, 0, 0, 0.72);
+  --arena-overlay-color: var(--text-on-accent);
+  --arena-source-btn-bg: rgba(0, 0, 0, 0.85);
+  --arena-source-btn-bg-hover: rgba(0, 0, 0, 0.95);
+  --arena-source-btn-color: var(--text-on-accent);
+}
+
+.theme-dark {
+  --arena-source-btn-bg: rgba(255, 255, 255, 0.9);
+  --arena-source-btn-bg-hover: rgba(255, 255, 255, 1);
+  --arena-source-btn-color: var(--color-base-100);
+}
+
 .arena-file-input-hidden {
   display: none;
 }
@@ -83,8 +102,8 @@
   padding: 10px 16px;
   font-size: 14px;
   font-weight: 400;
-  background: #1a1a1a;
-  color: #e0e0e0;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
   border: 1px solid transparent;
   border-radius: 4px;
   cursor: pointer;
@@ -94,7 +113,7 @@
 }
 
 .arena-btn-new-channel:hover {
-  border-color: #555;
+  border-color: var(--interactive-accent-hover);
 }
 
 .arena-btn-new-channel .arena-btn-icon {
@@ -435,8 +454,8 @@
   position: absolute;
   bottom: 8px;
   right: 8px;
-  background: rgba(0, 0, 0, 0.72);
-  color: #fff;
+  background: var(--arena-overlay-bg);
+  color: var(--arena-overlay-color);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.09em;
@@ -450,8 +469,8 @@
   position: absolute;
   bottom: 48px;
   left: 12px;
-  background: rgba(0, 0, 0, 0.85);
-  color: #fff;
+  background: var(--arena-source-btn-bg);
+  color: var(--arena-source-btn-color);
   padding: 8px 16px;
   font-size: 13px;
   font-weight: 500;
@@ -470,16 +489,7 @@
 }
 
 .arena-source-btn:hover {
-  background: rgba(0, 0, 0, 0.95);
-}
-
-.theme-dark .arena-source-btn {
-  background: rgba(255, 255, 255, 0.9);
-  color: #000;
-}
-
-.theme-dark .arena-source-btn:hover {
-  background: rgba(255, 255, 255, 1);
+  background: var(--arena-source-btn-bg-hover);
 }
 
 .arena-block-name {
@@ -851,9 +861,6 @@
   font-size: 14px;
   min-height: 44px;
   border-radius: 4px;
-  background: #1a1a1a;
-  color: #e0e0e0;
-  border: 1px solid transparent;
 }
 
 /* Grid: responsive on mobile with smaller minimum */
