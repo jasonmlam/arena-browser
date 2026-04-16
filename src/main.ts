@@ -1772,8 +1772,7 @@ class ArenaSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
-      .setName("Show assets folder in Arena Browser")
+      .setName("Show assets folder")
       .setDesc(
         "When off, the assets folder is omitted from the channel list. Turn on to open and manage cover images like any other channel.",
       )
