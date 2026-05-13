@@ -24,6 +24,19 @@ import {
 const VIEW_TYPE_ARENA = "arena-browser";
 const ICON_ARENA = "layout-grid";
 const CHANNEL_META_FILE = "_channel.md";
+
+/** Replaced at build time when `APIFY_TOKEN` is set in `.env` (see esbuild.config.mjs). */
+function apifyTokenFromBuild(): string {
+  if (typeof process === "undefined") return "";
+  try {
+    // esbuild replaces `process.env.APIFY_TOKEN` when present in `.env`
+    const t = process.env.APIFY_TOKEN;
+    return typeof t === "string" ? t.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
 const DEFAULT_SETTINGS: ArenaPluginSettings = {
   rootFolder: "arena",
   apifyToken: "",
@@ -140,6 +153,12 @@ export default class ArenaPlugin extends Plugin {
       callback: () => this.createChannelDialog(),
     });
 
+    this.addCommand({
+      id: "migrate-cover-images",
+      name: "Migrate cover images to channel folders",
+      callback: () => this.migrateCoverImagesToChannelFolders(),
+    });
+
     this.addSettingTab(new ArenaSettingTab(this.app, this));
     this.app.workspace.onLayoutReady(() => this.ensureRootFolder());
   }
@@ -227,6 +246,75 @@ export default class ArenaPlugin extends Plugin {
       }
     });
   }
+
+  async migrateCoverImagesToChannelFolders() {
+    const root = normalizePath(this.settings.rootFolder);
+    const mdFiles = this.app.vault.getFiles().filter(
+      (f) =>
+        f.extension === "md" &&
+        (f.path === `${root}/${f.name}` || f.path.startsWith(`${root}/`)) &&
+        f.name !== CHANNEL_META_FILE,
+    );
+
+    let moved = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const file of mdFiles) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const coverPath = cache?.frontmatter?.cover_image as string | undefined;
+      if (!coverPath) continue;
+
+      const coverFile = this.app.vault.getFileByPath(coverPath);
+      if (!coverFile) continue;
+
+      if (coverFile.parent?.path === file.parent?.path) {
+        skipped++;
+        continue;
+      }
+
+      const targetFolder = file.parent!.path;
+      let newCoverPath = normalizePath(`${targetFolder}/${coverFile.name}`);
+
+      // Avoid collision with an existing file that isn't the same file
+      let counter = 1;
+      while (
+        this.app.vault.getAbstractFileByPath(newCoverPath) &&
+        this.app.vault.getFileByPath(newCoverPath) !== coverFile
+      ) {
+        const ext = coverFile.extension ? `.${coverFile.extension}` : "";
+        const base = coverFile.basename;
+        newCoverPath = normalizePath(`${targetFolder}/${base}-${counter}${ext}`);
+        counter++;
+      }
+
+      try {
+        await this.app.vault.rename(coverFile, newCoverPath);
+
+        // Update the cover_image path in the note's frontmatter
+        const raw = await this.app.vault.read(file);
+        const updated = raw.replace(
+          /^(cover_image:\s*")[^"]*(")/m,
+          `$1${newCoverPath}$2`,
+        );
+        if (updated !== raw) {
+          await this.app.vault.modify(file, updated);
+        }
+
+        moved++;
+      } catch (err) {
+        console.error("Arena: failed to migrate cover image", coverPath, err);
+        failed++;
+      }
+    }
+
+    const parts: string[] = [];
+    if (moved > 0) parts.push(`Moved ${moved} cover image${moved !== 1 ? "s" : ""}`);
+    if (skipped > 0) parts.push(`${skipped} already in place`);
+    if (failed > 0) parts.push(`${failed} failed`);
+    new Notice(parts.length ? parts.join(", ") : "No cover images to migrate");
+    this.refreshViews();
+  }
 }
 
 // ─── Arena View ──────────────────────────────────────────────────────────────
@@ -281,6 +369,10 @@ class ArenaView extends ItemView {
   async onClose() {
     await super.onClose();
     this.contentEl.empty();
+  }
+
+  onResize() {
+    this.render();
   }
 
   // ── Touch helpers ──────────────────────────────────────────────────────────
@@ -455,6 +547,7 @@ class ArenaView extends ItemView {
 
     // Inner row: parent card on left, items on right
     const innerRow = wrapper.createDiv({ cls: "arena-parent-inner" });
+    innerRow.style.setProperty("--arena-parent-cols", String(PREVIEW_COUNT + 1));
 
     // Parent channel square (left side, fixed size)
     const parentCard = innerRow.createDiv({ cls: "arena-parent-card" });
@@ -847,31 +940,7 @@ class ArenaView extends ItemView {
         dropZone.removeClass("arena-drop-zone-editing");
 
         if (/^https?:\/\//.test(text)) {
-          const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          const label = this.isImageUrl(text)
-            ? "Saving image…"
-            : "Fetching link…";
-          this.pendingBlocks.push({
-            id: pendingId,
-            label,
-            channel: folder.path,
-          });
-          this.render();
-
-          void (async () => {
-            try {
-              if (this.isImageUrl(text)) {
-                await this.saveImageFromUrl(text, folder);
-              } else {
-                await this.saveUrlAsBookmark(text, folder);
-              }
-            } finally {
-              this.pendingBlocks = this.pendingBlocks.filter(
-                (p) => p.id !== pendingId,
-              );
-              this.render();
-            }
-          })();
+          void this.enqueueUrlBookmark(text, folder);
         } else {
           void this.createTextBlock(text, folder).then(() => this.render());
         }
@@ -882,11 +951,20 @@ class ArenaView extends ItemView {
       if (!e.clipboardData) return;
       const clipData = e.clipboardData;
       const items = Array.from(clipData.items);
-      if (!items.some((item) => item.type.startsWith("image/"))) return;
-      e.preventDefault();
-      textarea.value = "";
-      dropZone.removeClass("arena-drop-zone-editing");
-      void this.saveClipboardImage(clipData, folder);
+      if (items.some((item) => item.type.startsWith("image/"))) {
+        e.preventDefault();
+        textarea.value = "";
+        dropZone.removeClass("arena-drop-zone-editing");
+        void this.saveClipboardImage(clipData, folder);
+        return;
+      }
+      const text = clipData.getData("text/plain")?.trim();
+      if (text && /^https?:\/\/\S+$/.test(text)) {
+        e.preventDefault();
+        textarea.value = "";
+        dropZone.removeClass("arena-drop-zone-editing");
+        void this.enqueueUrlBookmark(text, folder);
+      }
     });
 
     textarea.addEventListener("blur", () => {
@@ -1124,31 +1202,7 @@ class ArenaView extends ItemView {
         (droppedUrl.startsWith("http://") || droppedUrl.startsWith("https://"))
       ) {
         const trimmedUrl = droppedUrl.trim();
-        const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const label = this.isImageUrl(trimmedUrl)
-          ? "Saving image…"
-          : "Fetching link…";
-        this.pendingBlocks.push({
-          id: pendingId,
-          label,
-          channel: targetFolder.path,
-        });
-        this.render();
-
-        void (async () => {
-          try {
-            if (this.isImageUrl(trimmedUrl)) {
-              await this.saveImageFromUrl(trimmedUrl, targetFolder);
-            } else {
-              await this.saveUrlAsBookmark(trimmedUrl, targetFolder);
-            }
-          } finally {
-            this.pendingBlocks = this.pendingBlocks.filter(
-              (p) => p.id !== pendingId,
-            );
-            this.render();
-          }
-        })();
+        void this.enqueueUrlBookmark(trimmedUrl, targetFolder);
         return;
       }
 
@@ -1216,6 +1270,51 @@ class ArenaView extends ItemView {
 
   // ── URL Bookmark ───────────────────────────────────────────────────────────
 
+  private async enqueueUrlBookmark(url: string, folder: TFolder) {
+    const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const label = this.isImageUrl(url) ? "Saving image…" : "Fetching link…";
+    this.pendingBlocks.push({
+      id: pendingId,
+      label,
+      channel: folder.path,
+    });
+    this.render();
+    try {
+      if (this.isImageUrl(url)) {
+        await this.saveImageFromUrl(url, folder);
+      } else {
+        await this.saveUrlAsBookmark(url, folder);
+      }
+    } finally {
+      this.pendingBlocks = this.pendingBlocks.filter((p) => p.id !== pendingId);
+      this.render();
+    }
+  }
+
+  /** Parse og:image whether `content` appears before or after `property`. */
+  private extractOgImage(html: string): string {
+    const patterns = [
+      /<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i,
+      /<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i,
+    ];
+    for (const p of patterns) {
+      const m = html.match(p);
+      if (m?.[1]) return m[1].trim();
+    }
+    return "";
+  }
+
+  private resolveAbsoluteUrl(baseUrl: string, ref: string): string {
+    const trimmed = ref.trim();
+    if (!trimmed) return "";
+    try {
+      if (trimmed.startsWith("//")) return `https:${trimmed}`;
+      return new URL(trimmed, baseUrl).href;
+    } catch {
+      return trimmed;
+    }
+  }
+
   async saveUrlAsBookmark(url: string, folder: TFolder) {
     let title = url;
     let description = "";
@@ -1240,10 +1339,7 @@ class ArenaView extends ItemView {
         );
       if (descMatch) description = this.sanitizeMetaContent(descMatch[1]);
 
-      const imgMatch = html.match(
-        /<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i,
-      );
-      if (imgMatch) ogImage = imgMatch[1].trim();
+      ogImage = this.extractOgImage(html);
     } catch {
       // metadata fetch failed — continue with URL as fallback title
     }
@@ -1269,6 +1365,9 @@ class ArenaView extends ItemView {
     if (!coverArtUrl) {
       coverArtUrl = await this.fetchApifyScreenshot(url);
     }
+    if (!coverArtUrl && ogImage) {
+      coverArtUrl = this.resolveAbsoluteUrl(url, ogImage);
+    }
 
     if (coverArtUrl) {
       try {
@@ -1276,11 +1375,7 @@ class ArenaView extends ItemView {
           url: coverArtUrl,
           method: "GET",
         });
-        const assetsFolder = this.plugin.getAssetsFolderPath();
-        if (!this.app.vault.getFolderByPath(assetsFolder)) {
-          await this.app.vault.createFolder(assetsFolder);
-        }
-        let coverPath = normalizePath(`${assetsFolder}/${safeName}-cover.jpg`);
+        let coverPath = normalizePath(`${folder.path}/${safeName}-cover.jpg`);
         coverPath = this.deduplicatePath(coverPath);
         await this.app.vault.createBinary(coverPath, imgResponse.arrayBuffer);
         coverImagePath = coverPath;
@@ -1348,7 +1443,8 @@ class ArenaView extends ItemView {
   }
 
   async fetchApifyScreenshot(url: string): Promise<string | null> {
-    const token = this.plugin.settings.apifyToken;
+    const token =
+      this.plugin.settings.apifyToken.trim() || apifyTokenFromBuild();
     if (!token) return null;
 
     try {
@@ -1532,9 +1628,20 @@ class ArenaView extends ItemView {
   }
 
   getBlocks(folder: TFolder): BlockInfo[] {
+    const coveredPaths = new Set<string>();
+    for (const child of folder.children) {
+      if (!(child instanceof TFile) || child.extension !== "md") continue;
+      const coverPath = this.app.metadataCache
+        .getFileCache(child)?.frontmatter?.cover_image as string | undefined;
+      if (coverPath) coveredPaths.add(coverPath);
+    }
+
     return folder.children
       .filter(
-        (f): f is TFile => f instanceof TFile && f.name !== CHANNEL_META_FILE,
+        (f): f is TFile =>
+          f instanceof TFile &&
+          f.name !== CHANNEL_META_FILE &&
+          !coveredPaths.has(f.path),
       )
       .map((file) => ({
         file,
@@ -1801,5 +1908,16 @@ class ArenaSettingTab extends PluginSettingTab {
           });
         text.inputEl.type = "password";
       });
+
+    new Setting(containerEl)
+      .setName("Migrate cover images")
+      .setDesc(
+        "Move any existing cover images stored in the assets folder to sit alongside their notes in the channel folder, and update the frontmatter paths accordingly.",
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText("Run migration")
+          .onClick(() => this.plugin.migrateCoverImagesToChannelFolders()),
+      );
   }
 }

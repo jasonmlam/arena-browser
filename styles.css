@@ -246,10 +246,7 @@
 
 .arena-parent-inner {
   display: grid;
-  grid-template-columns: repeat(
-    auto-fill,
-    minmax(var(--arena-min-card, 220px), 1fr)
-  );
+  grid-template-columns: repeat(var(--arena-parent-cols, 1), minmax(0, 1fr));
   gap: 16px;
 }
 
