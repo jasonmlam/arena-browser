@@ -4,6 +4,7 @@ import {
   WorkspaceLeaf,
   TFolder,
   TFile,
+  Vault,
   Notice,
   Menu,
   Modal,
@@ -14,10 +15,21 @@ import {
   normalizePath,
   requestUrl,
   MarkdownRenderer,
-  Component,
   AbstractInputSuggest,
   FuzzySuggestModal,
 } from "obsidian";
+
+// ─── Compat shims (getFolderByPath/getFileByPath require v1.5.7) ─────────────
+
+function getFolderByPath(vault: Vault, path: string): TFolder | null {
+  const f = vault.getAbstractFileByPath(path);
+  return f instanceof TFolder ? f : null;
+}
+
+function getFileByPath(vault: Vault, path: string): TFile | null {
+  const f = vault.getAbstractFileByPath(path);
+  return f instanceof TFile ? f : null;
+}
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -144,11 +156,11 @@ export default class ArenaPlugin extends Plugin {
     this.addCommand({
       id: "open",
       name: "Open view",
-      callback: () => this.activateView(),
+      callback: () => { void this.activateView(); },
     });
 
     this.addCommand({
-      id: "create-arena-channel",
+      id: "create-channel",
       name: "Create new channel",
       callback: () => this.createChannelDialog(),
     });
@@ -156,17 +168,18 @@ export default class ArenaPlugin extends Plugin {
     this.addCommand({
       id: "migrate-cover-images",
       name: "Migrate cover images to channel folders",
-      callback: () => this.migrateCoverImagesToChannelFolders(),
+      callback: () => { void this.migrateCoverImagesToChannelFolders(); },
     });
 
     this.addSettingTab(new ArenaSettingTab(this.app, this));
-    this.app.workspace.onLayoutReady(() => this.ensureRootFolder());
+    this.app.workspace.onLayoutReady(() => { void this.ensureRootFolder(); });
   }
 
   onunload() {}
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()) as ArenaPluginSettings;
+    const saved = (await this.loadData()) as Partial<ArenaPluginSettings> | null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, saved ?? {});
   }
 
   async saveSettings() {
@@ -187,12 +200,12 @@ export default class ArenaPlugin extends Plugin {
       leaf = workspace.getLeaf(false);
       await leaf.setViewState({ type: VIEW_TYPE_ARENA, active: true });
     }
-    void workspace.revealLeaf(leaf);
+    workspace.setActiveLeaf(leaf, { focus: true });
   }
 
   async ensureRootFolder() {
     const root = normalizePath(this.settings.rootFolder);
-    if (!this.app.vault.getFolderByPath(root)) {
+    if (!getFolderByPath(this.app.vault, root)) {
       await this.app.vault.createFolder(root);
     }
   }
@@ -236,7 +249,7 @@ export default class ArenaPlugin extends Plugin {
     new Notice(`Channel "${name}" created`);
     this.refreshViews();
 
-    return this.app.vault.getFolderByPath(path);
+    return getFolderByPath(this.app.vault, path);
   }
 
   refreshViews() {
@@ -265,7 +278,7 @@ export default class ArenaPlugin extends Plugin {
       const coverPath = cache?.frontmatter?.cover_image as string | undefined;
       if (!coverPath) continue;
 
-      const coverFile = this.app.vault.getFileByPath(coverPath);
+      const coverFile = getFileByPath(this.app.vault, coverPath);
       if (!coverFile) continue;
 
       if (coverFile.parent?.path === file.parent?.path) {
@@ -280,7 +293,7 @@ export default class ArenaPlugin extends Plugin {
       let counter = 1;
       while (
         this.app.vault.getAbstractFileByPath(newCoverPath) &&
-        this.app.vault.getFileByPath(newCoverPath) !== coverFile
+        getFileByPath(this.app.vault, newCoverPath) !== coverFile
       ) {
         const ext = coverFile.extension ? `.${coverFile.extension}` : "";
         const base = coverFile.basename;
@@ -355,10 +368,10 @@ class ArenaView extends ItemView {
     await super.onOpen();
     this.render();
 
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let refreshTimer: ReturnType<typeof activeWindow.setTimeout> | null = null;
     const debouncedRender = () => {
-      if (refreshTimer) clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(() => this.render(), 200);
+      if (refreshTimer) activeWindow.clearTimeout(refreshTimer);
+      refreshTimer = activeWindow.setTimeout(() => this.render(), 200);
     };
 
     this.registerEvent(this.app.vault.on("create", debouncedRender));
@@ -378,14 +391,14 @@ class ArenaView extends ItemView {
   // ── Touch helpers ──────────────────────────────────────────────────────────
 
   addLongPress(el: HTMLElement, callback: (e: TouchEvent) => void, ms = 500) {
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let timer: ReturnType<typeof activeWindow.setTimeout> | null = null;
     let moved = false;
 
     el.addEventListener(
       "touchstart",
       (e) => {
         moved = false;
-        timer = setTimeout(() => {
+        timer = activeWindow.setTimeout(() => {
           if (!moved) {
             e.preventDefault();
             callback(e);
@@ -398,28 +411,29 @@ class ArenaView extends ItemView {
     el.addEventListener("touchmove", () => {
       moved = true;
       if (timer) {
-        clearTimeout(timer);
+        activeWindow.clearTimeout(timer);
         timer = null;
       }
     });
 
     el.addEventListener("touchend", () => {
       if (timer) {
-        clearTimeout(timer);
+        activeWindow.clearTimeout(timer);
         timer = null;
       }
     });
 
     el.addEventListener("touchcancel", () => {
       if (timer) {
-        clearTimeout(timer);
+        activeWindow.clearTimeout(timer);
         timer = null;
       }
     });
   }
 
   showContextMenuAtPoint(x: number, y: number, menu: Menu) {
-    menu.showAtPosition({ x, y });
+    type MenuWithPosition = Menu & { showAtPosition?: (pos: { x: number; y: number }) => void };
+    (menu as MenuWithPosition).showAtPosition?.({ x, y });
   }
 
   // ── Rendering ──────────────────────────────────────────────────────────────
@@ -435,7 +449,8 @@ class ArenaView extends ItemView {
       this.renderChannelGrid(container);
     }
 
-    (this.leaf as unknown as { updateHeader?: () => void }).updateHeader?.();
+    type LeafWithHeader = WorkspaceLeaf & { updateHeader?: () => void };
+    (this.leaf as LeafWithHeader).updateHeader?.();
   }
 
   // ── Breadcrumb ─────────────────────────────────────────────────────────────
@@ -443,7 +458,7 @@ class ArenaView extends ItemView {
   renderBreadcrumb(container: HTMLElement) {
     const breadcrumb = container.createDiv({ cls: "arena-breadcrumb" });
 
-    const rootLink = breadcrumb.createEl("span", {
+    const rootLink = breadcrumb.createSpan({
       text: "Arena",
       cls: "arena-breadcrumb-link",
     });
@@ -454,13 +469,13 @@ class ArenaView extends ItemView {
     });
 
     for (let i = 0; i < this.navigationStack.length; i++) {
-      breadcrumb.createEl("span", {
+      breadcrumb.createSpan({
         text: " / ",
         cls: "arena-breadcrumb-sep",
       });
 
       const folder = this.navigationStack[i];
-      const link = breadcrumb.createEl("span", {
+      const link = breadcrumb.createSpan({
         text: folder.name,
         cls: "arena-breadcrumb-link",
       });
@@ -478,11 +493,11 @@ class ArenaView extends ItemView {
           this.currentChannel.path;
 
       if (!isInStack) {
-        breadcrumb.createEl("span", {
+        breadcrumb.createSpan({
           text: " / ",
           cls: "arena-breadcrumb-sep",
         });
-        breadcrumb.createEl("span", {
+        breadcrumb.createSpan({
           text: this.currentChannel.name,
           cls: "arena-breadcrumb-current",
         });
@@ -572,11 +587,11 @@ class ArenaView extends ItemView {
     parentInfo.createEl("h3", { text: channel.name, cls: "arena-card-title" });
 
     const parentMeta = parentInfo.createDiv({ cls: "arena-parent-meta" });
-    parentMeta.createEl("span", {
+    parentMeta.createSpan({
       text: `${channel.blockCount} block${channel.blockCount !== 1 ? "s" : ""}`,
       cls: "arena-card-meta",
     });
-    parentMeta.createEl("span", {
+    parentMeta.createSpan({
       text: this.timeAgo(channel.lastModified),
       cls: "arena-card-meta",
     });
@@ -601,11 +616,11 @@ class ArenaView extends ItemView {
         });
 
         const subMeta = subInfo.createDiv({ cls: "arena-sub-meta" });
-        subMeta.createEl("span", {
+        subMeta.createSpan({
           text: `${sub.blockCount} block${sub.blockCount !== 1 ? "s" : ""}`,
           cls: "arena-card-meta",
         });
-        subMeta.createEl("span", {
+        subMeta.createSpan({
           text: this.timeAgo(sub.lastModified),
           cls: "arena-card-meta",
         });
@@ -665,23 +680,20 @@ class ArenaView extends ItemView {
         .onClick(() => this.plugin.createChannelDialog(channel.folder)),
     );
 
-    const fileExplorer = (
-      this.app as unknown as {
-        internalPlugins?: {
-          plugins?: Record<
-            string,
-            { instance?: { revealInFolder?: (f: TFolder) => void } }
-          >;
-        };
-      }
-    ).internalPlugins?.plugins?.["file-explorer"]?.instance;
+    type AppWithInternals = App & {
+      internalPlugins?: {
+        plugins?: Record<string, { instance?: { revealInFolder?: (f: TFolder) => void } }>;
+      };
+    };
+    const fileExplorer = (this.app as AppWithInternals).internalPlugins
+      ?.plugins?.["file-explorer"]?.instance;
     if (fileExplorer) {
       menu.addItem((item) =>
         item
           .setTitle("Reveal in file explorer")
           .setIcon("folder-search")
           .onClick(() => {
-            const folder = this.app.vault.getFolderByPath(channel.path);
+            const folder = getFolderByPath(this.app.vault, channel.path);
             if (folder) fileExplorer.revealInFolder?.(folder);
           }),
       );
@@ -752,17 +764,17 @@ class ArenaView extends ItemView {
     info.createEl("h3", { text: channel.name, cls: "arena-card-title" });
 
     const metaLine = info.createDiv({ cls: "arena-card-meta-row" });
-    metaLine.createEl("span", {
+    metaLine.createSpan({
       text: `${channel.blockCount} blocks`,
       cls: "arena-card-meta",
     });
     if (channel.subChannelCount > 0) {
-      metaLine.createEl("span", {
+      metaLine.createSpan({
         text: ` · ${channel.subChannelCount} sub-channels`,
         cls: "arena-card-meta",
       });
     }
-    info.createEl("span", {
+    info.createSpan({
       text: this.timeAgo(channel.lastModified),
       cls: "arena-card-meta",
     });
@@ -808,7 +820,7 @@ class ArenaView extends ItemView {
     if (subChannels.length > 0)
       countParts.push(`${subChannels.length} sub-channels`);
     if (countParts.length > 0) {
-      titleRow.createEl("span", {
+      titleRow.createSpan({
         text: countParts.join(" · "),
         cls: "arena-channel-count",
       });
@@ -876,15 +888,15 @@ class ArenaView extends ItemView {
     });
     let chooseLink: HTMLElement;
     if (Platform.isMobile) {
-      chooseLink = placeholderText.createEl("span", {
+      chooseLink = placeholderText.createSpan({
         text: "Choose files",
         cls: "arena-drop-zone-choose",
       });
       placeholderText.appendText(" or tap to type a URL or text");
     } else {
       placeholderText.appendText("Drop or ");
-      chooseLink = placeholderText.createEl("span", {
-        text: "Choose",
+      chooseLink = placeholderText.createSpan({
+        text: "choose",
         cls: "arena-drop-zone-choose",
       });
       placeholderText.appendText(
@@ -909,7 +921,7 @@ class ArenaView extends ItemView {
     const defaultHint = Platform.isMobile
       ? "Enter to submit"
       : "Shift + Enter for line break";
-    hintBar.createEl("span", { text: defaultHint });
+    hintBar.createSpan({ text: defaultHint });
 
     const activateEditing = () => {
       dropZone.addClass("arena-drop-zone-editing");
@@ -991,10 +1003,10 @@ class ArenaView extends ItemView {
     const preview = card.createDiv({ cls: "arena-block-preview" });
     const spinner = preview.createDiv({ cls: "arena-pending-spinner" });
     for (let i = 0; i < 8; i++) {
-      spinner.createEl("span");
+      spinner.createSpan();
     }
     const label = card.createDiv({ cls: "arena-block-label" });
-    label.createEl("span", {
+    label.createSpan({
       text: pending.label,
       cls: "arena-block-name arena-pending-label",
     });
@@ -1017,14 +1029,14 @@ class ArenaView extends ItemView {
         const coverPath = fm?.cover_image as string | undefined;
         const sourcePlatform = fm?.source_platform as string | undefined;
         if (coverPath) {
-          const coverFile = this.app.vault.getFileByPath(coverPath);
+          const coverFile = getFileByPath(this.app.vault, coverPath);
           if (coverFile) {
             const img = preview.createEl("img", { cls: "arena-block-image" });
             img.src = this.app.vault.getResourcePath(coverFile);
             img.alt = block.name;
             img.loading = "lazy";
             if (sourcePlatform) {
-              preview.createEl("span", {
+              preview.createSpan({
                 text: sourcePlatform,
                 cls: "arena-source-badge",
               });
@@ -1038,33 +1050,31 @@ class ArenaView extends ItemView {
           const stripped = content.replace(/^---[\s\S]*?---\n?/, "");
           const lines = stripped.trim().split("\n").slice(0, 8).join("\n");
           const excerptEl = preview.createDiv({ cls: "arena-block-excerpt" });
-          const comp = new Component();
-          comp.load();
           await MarkdownRenderer.render(
             this.app,
             lines,
             excerptEl,
             block.file.path,
-            comp,
+            this,
           );
         })();
         break;
       }
       case "pdf":
         preview.addClass("arena-block-file");
-        preview.createEl("span", { text: "PDF", cls: "arena-file-icon" });
+        preview.createSpan({ text: "PDF", cls: "arena-file-icon" });
         break;
       case "video":
         preview.addClass("arena-block-file");
-        preview.createEl("span", { text: "VIDEO", cls: "arena-file-icon" });
+        preview.createSpan({ text: "VIDEO", cls: "arena-file-icon" });
         break;
       case "audio":
         preview.addClass("arena-block-file");
-        preview.createEl("span", { text: "AUDIO", cls: "arena-file-icon" });
+        preview.createSpan({ text: "AUDIO", cls: "arena-file-icon" });
         break;
       default:
         preview.addClass("arena-block-file");
-        preview.createEl("span", {
+        preview.createSpan({
           text: block.file.extension.toUpperCase(),
           cls: "arena-file-icon",
         });
@@ -1072,10 +1082,11 @@ class ArenaView extends ItemView {
 
     // Add Source button if block has a URL in frontmatter
     const cache = this.app.metadataCache.getFileCache(block.file);
-    const url = cache?.frontmatter?.url as string | undefined;
-    if (url && typeof url === "string") {
+    const urlVal: unknown = cache?.frontmatter?.url;
+    const url = typeof urlVal === "string" ? urlVal : undefined;
+    if (url) {
       const sourceBtn = card.createDiv({ cls: "arena-source-btn" });
-      sourceBtn.createEl("span", { text: "Source" });
+      sourceBtn.createSpan({ text: "Source" });
       sourceBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         window.open(url, "_blank");
@@ -1083,7 +1094,7 @@ class ArenaView extends ItemView {
     }
 
     const label = card.createDiv({ cls: "arena-block-label" });
-    label.createEl("span", { text: block.name, cls: "arena-block-name" });
+    label.createSpan({ text: block.name, cls: "arena-block-name" });
 
     card.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -1179,7 +1190,7 @@ class ArenaView extends ItemView {
       // 1. Internal block move
       const internalPath = e.dataTransfer.getData("text/arena-block-path");
       if (internalPath) {
-        const file = this.app.vault.getFileByPath(internalPath);
+        const file = getFileByPath(this.app.vault, internalPath);
         if (file) {
           const newPath = normalizePath(`${targetFolder.path}/${file.name}`);
           if (file.path !== newPath) {
@@ -1462,9 +1473,13 @@ class ArenaView extends ItemView {
         throw: false,
       });
 
-      const items = response.json as Array<{ screenshotUrl?: string }>;
-      if (Array.isArray(items) && items.length > 0 && items[0].screenshotUrl) {
-        return items[0].screenshotUrl;
+      const raw: unknown = response.json;
+      if (Array.isArray(raw) && raw.length > 0) {
+        const first: unknown = raw[0];
+        if (typeof first === "object" && first !== null) {
+          const screenshotUrl = (first as Record<string, unknown>).screenshotUrl;
+          if (typeof screenshotUrl === "string") return screenshotUrl;
+        }
       }
     } catch {
       // screenshot failed — continue without cover image
@@ -1569,8 +1584,9 @@ class ArenaView extends ItemView {
 
   getChannels(parentFolder?: TFolder): ChannelInfo[] {
     const folder =
-      parentFolder ||
-      this.app.vault.getFolderByPath(
+      parentFolder ??
+      getFolderByPath(
+        this.app.vault,
         normalizePath(this.plugin.settings.rootFolder),
       );
 
@@ -1753,7 +1769,7 @@ class CreateChannelModal extends Modal {
           this.close();
         }
       });
-      setTimeout(() => text.inputEl.focus(), 50);
+      activeWindow.setTimeout(() => text.inputEl.focus(), 50);
     });
 
     new Setting(contentEl).addButton((btn) =>
@@ -1917,7 +1933,7 @@ class ArenaSettingTab extends PluginSettingTab {
       .addButton((btn) =>
         btn
           .setButtonText("Run migration")
-          .onClick(() => this.plugin.migrateCoverImagesToChannelFolders()),
+          .onClick(() => { void this.plugin.migrateCoverImagesToChannelFolders(); }),
       );
   }
 }
