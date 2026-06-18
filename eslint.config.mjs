@@ -1,20 +1,20 @@
 import tsparser from "@typescript-eslint/parser";
-import { defineConfig } from "eslint/config";
-import obsidianmd from "eslint-plugin-obsidianmd";
+import tseslint from "typescript-eslint";
+import js from "@eslint/js";
 import globals from "globals";
 
-export default defineConfig([
+export default tseslint.config(
   {
     ignores: [
       "**/node_modules/**",
       "main.js",
       "coverage/**",
-      // Not in tsconfig; recommended rules include type-aware @typescript-eslint rules
       "jest.config.js",
       "esbuild.config.mjs",
     ],
   },
-  ...obsidianmd.configs.recommended,
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
   {
     files: ["**/*.ts"],
     languageOptions: {
@@ -22,8 +22,13 @@ export default defineConfig([
       parserOptions: { project: "./tsconfig.json" },
       globals: {
         ...globals.browser,
-        ...globals.jest,
       },
     },
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
   },
-]);
+);
