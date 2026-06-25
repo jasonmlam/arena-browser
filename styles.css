@@ -8,15 +8,17 @@
 :root {
   --arena-overlay-bg: rgba(0, 0, 0, 0.72);
   --arena-overlay-color: var(--text-on-accent);
-  --arena-source-btn-bg: rgba(0, 0, 0, 0.85);
-  --arena-source-btn-bg-hover: rgba(0, 0, 0, 0.95);
-  --arena-source-btn-color: var(--text-on-accent);
+  --arena-source-btn-bg: rgba(0, 0, 0, 0.42);
+  --arena-source-btn-bg-hover: rgba(0, 0, 0, 0.52);
+  --arena-source-btn-color: rgba(255, 255, 255, 0.92);
+  --arena-source-btn-border: rgba(255, 255, 255, 0.12);
 }
 
 .theme-dark {
-  --arena-source-btn-bg: rgba(255, 255, 255, 0.9);
-  --arena-source-btn-bg-hover: rgba(255, 255, 255, 1);
-  --arena-source-btn-color: var(--color-base-100);
+  --arena-source-btn-bg: rgba(255, 255, 255, 0.42);
+  --arena-source-btn-bg-hover: rgba(255, 255, 255, 0.52);
+  --arena-source-btn-color: rgba(0, 0, 0, 0.72);
+  --arena-source-btn-border: rgba(0, 0, 0, 0.08);
 }
 
 .arena-file-input-hidden {
@@ -59,6 +61,9 @@
 
 .arena-header-actions {
   margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .arena-nav {
@@ -468,12 +473,15 @@
   left: 12px;
   background: var(--arena-source-btn-bg);
   color: var(--arena-source-btn-color);
+  border: 1px solid var(--arena-source-btn-border);
   padding: 8px 16px;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: opacity 0.2s ease, background 0.15s ease;
   z-index: 10;
 }
 

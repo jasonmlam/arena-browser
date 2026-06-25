@@ -54,6 +54,7 @@ const DEFAULT_SETTINGS: ArenaPluginSettings = {
   apifyToken: "",
   assetsFolder: "",
   showAssetsInBrowser: false,
+  arenaAccessToken: "",
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -65,6 +66,8 @@ interface ArenaPluginSettings {
   assetsFolder: string;
   /** When false, the assets folder is omitted from the channel list (if it appears as a subfolder). */
   showAssetsInBrowser: boolean;
+  /** Optional Are.na personal access token. Required for importing private channels. */
+  arenaAccessToken: string;
 }
 
 interface ChannelInfo {
@@ -81,6 +84,37 @@ interface BlockInfo {
   file: TFile;
   type: "image" | "markdown" | "pdf" | "video" | "audio" | "other";
   name: string;
+}
+
+// ─── Are.na API types ────────────────────────────────────────────────────────
+
+interface ArenaImageVariant {
+  url?: string;
+}
+
+interface ArenaBlock {
+  id: number;
+  class?: string;
+  title?: string;
+  content?: string;
+  description?: string;
+  slug?: string;
+  image?: {
+    original?: ArenaImageVariant;
+    display?: ArenaImageVariant;
+  };
+  source?: { url?: string };
+  attachment?: { url?: string };
+}
+
+interface ArenaChannel {
+  id: number;
+  title?: string;
+  slug?: string;
+  length?: number;
+  metadata?: { description?: string };
+  user?: { slug?: string };
+  contents?: ArenaBlock[];
 }
 
 function collectFolderPaths(folder: TFolder): string[] {
@@ -156,7 +190,9 @@ export default class ArenaPlugin extends Plugin {
     this.addCommand({
       id: "open",
       name: "Open view",
-      callback: () => { void this.activateView(); },
+      callback: () => {
+        void this.activateView();
+      },
     });
 
     this.addCommand({
@@ -168,17 +204,22 @@ export default class ArenaPlugin extends Plugin {
     this.addCommand({
       id: "migrate-cover-images",
       name: "Migrate cover images to channel folders",
-      callback: () => { void this.migrateCoverImagesToChannelFolders(); },
+      callback: () => {
+        void this.migrateCoverImagesToChannelFolders();
+      },
     });
 
     this.addSettingTab(new ArenaSettingTab(this.app, this));
-    this.app.workspace.onLayoutReady(() => { void this.ensureRootFolder(); });
+    this.app.workspace.onLayoutReady(() => {
+      void this.ensureRootFolder();
+    });
   }
 
   onunload() {}
 
   async loadSettings() {
-    const saved = (await this.loadData()) as Partial<ArenaPluginSettings> | null;
+    const saved =
+      (await this.loadData()) as Partial<ArenaPluginSettings> | null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved ?? {});
   }
 
@@ -252,6 +293,350 @@ export default class ArenaPlugin extends Plugin {
     return getFolderByPath(this.app.vault, path);
   }
 
+  importChannelDialog(parentFolder?: TFolder) {
+    const modal = new ImportChannelModal(this.app, (url: string) => {
+      void this.importArenaChannel(url, parentFolder);
+    });
+    modal.open();
+  }
+
+  async importArenaChannel(url: string, parentFolder?: TFolder): Promise<void> {
+    // Parse slug from URL (last non-empty path segment)
+    let slug: string;
+    try {
+      const parsed = new URL(url);
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      if (parts.length === 0) throw new Error("No path segments");
+      slug = parts[parts.length - 1];
+    } catch {
+      new Notice("Invalid Are.na URL");
+      return;
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.settings.arenaAccessToken) {
+      headers["Authorization"] = `Bearer ${this.settings.arenaAccessToken}`;
+    }
+
+    new Notice(`Fetching Are.na channel "${slug}"…`);
+
+    let channelData: ArenaChannel;
+    try {
+      const res = await requestUrl({
+        url: `https://api.are.na/v2/channels/${slug}`,
+        headers,
+      });
+      channelData = res.json as ArenaChannel;
+    } catch {
+      new Notice(`Import failed: could not fetch channel "${slug}"`);
+      return;
+    }
+
+    if (!channelData || !channelData.id) {
+      new Notice(`Import failed: channel "${slug}" not found`);
+      return;
+    }
+
+    // Collect all blocks — first page is embedded in channel response
+    let allBlocks: ArenaBlock[] = channelData.contents ?? [];
+    const total = channelData.length ?? allBlocks.length;
+    const perPage = 25;
+
+    if (total > allBlocks.length) {
+      // Fetch remaining pages
+      const fetchedFirst = allBlocks.length;
+      const remainingPages = Math.ceil((total - fetchedFirst) / perPage);
+      for (let page = 2; page <= remainingPages + 1; page++) {
+        try {
+          const res = await requestUrl({
+            url: `https://api.are.na/v2/channels/${slug}/contents?page=${page}&per=${perPage}`,
+            headers,
+          });
+          const pageData = res.json as { contents?: ArenaBlock[] };
+          if (pageData.contents)
+            allBlocks = allBlocks.concat(pageData.contents);
+        } catch {
+          new Notice(`Warning: failed to fetch page ${page} of "${slug}"`);
+          break;
+        }
+      }
+    }
+
+    // Create the channel folder
+    const channelTitle = channelData.title ?? slug;
+    const folderName = channelTitle.replace(/[/\\:*?"<>|]/g, "-").trim() || slug;
+    const parent = parentFolder ? parentFolder.path : this.settings.rootFolder;
+    const folderPath = normalizePath(`${parent}/${folderName}`);
+
+    const existing = this.app.vault.getAbstractFileByPath(folderPath);
+    if (existing) {
+      new Notice(`Channel "${folderName}" already exists here`);
+      return;
+    }
+
+    await this.app.vault.createFolder(folderPath);
+
+    const metaLines = [
+      "---",
+      `title: "${channelTitle.replace(/"/g, '\\"')}"`,
+      `created: ${new Date().toISOString()}`,
+      `description: "${(channelData.metadata?.description ?? "").replace(/"/g, '\\"')}"`,
+      `tags: []`,
+      `arena_id: ${channelData.id}`,
+      `arena_slug: "${channelData.slug}"`,
+      `arena_url: "https://www.are.na/${channelData.user?.slug ?? ""}/${channelData.slug}"`,
+      "---",
+      "",
+      `# ${channelTitle}`,
+      "",
+    ];
+    await this.app.vault.create(
+      normalizePath(`${folderPath}/${CHANNEL_META_FILE}`),
+      metaLines.join("\n"),
+    );
+
+    // Process blocks
+    const usedNames = new Set<string>();
+
+    const deduplicateName = (base: string, ext: string): string => {
+      let candidate = `${base}${ext}`;
+      let counter = 1;
+      while (usedNames.has(candidate)) {
+        candidate = `${base}-${counter}${ext}`;
+        counter++;
+      }
+      usedNames.add(candidate);
+      return candidate;
+    };
+
+    for (let i = 0; i < allBlocks.length; i++) {
+      const block = allBlocks[i];
+      if (i > 0 && i % 5 === 0) {
+        new Notice(`Importing block ${i + 1} / ${allBlocks.length}…`);
+      }
+      try {
+        await this.importArenaBlock(block, folderPath, deduplicateName);
+      } catch {
+        // Per-block errors don't abort the import
+      }
+    }
+
+    this.refreshViews();
+    new Notice(`Imported "${channelTitle}" (${allBlocks.length} blocks)`);
+  }
+
+  private async importArenaBlock(
+    block: ArenaBlock,
+    folderPath: string,
+    deduplicateName: (base: string, ext: string) => string,
+  ): Promise<void> {
+    const safeBase =
+      (block.title ?? `block-${block.id}`)
+        .replace(/[/\\:*?"<>|]/g, "-")
+        .trim() || `block-${block.id}`;
+
+    switch (block.class) {
+      case "Image": {
+        const originalUrl = block.image?.original?.url;
+        const displayUrl = block.image?.display?.url;
+        const imageUrl = originalUrl ?? displayUrl;
+        if (imageUrl) {
+          const ext = imageUrl.split("?")[0].match(/\.\w+$/)?.[0] ?? ".jpg";
+          const fileName = deduplicateName(safeBase, ext);
+          try {
+            const imgRes = await requestUrl({ url: imageUrl, method: "GET" });
+            await this.app.vault.createBinary(
+              normalizePath(`${folderPath}/${fileName}`),
+              imgRes.arrayBuffer,
+            );
+            return;
+          } catch {
+            // Fall through: try display URL if original failed, then save as note
+          }
+
+          // If original failed and display is different, try display URL
+          let fallbackCoverPath = "";
+          if (displayUrl && displayUrl !== imageUrl) {
+            try {
+              const coverExt =
+                displayUrl.split("?")[0].match(/\.\w+$/)?.[0] ?? ".jpg";
+              const coverFileName = deduplicateName(
+                `${safeBase}-cover`,
+                coverExt,
+              );
+              const coverRes = await requestUrl({
+                url: displayUrl,
+                method: "GET",
+              });
+              const coverPath = normalizePath(
+                `${folderPath}/${coverFileName}`,
+              );
+              await this.app.vault.createBinary(
+                coverPath,
+                coverRes.arrayBuffer,
+              );
+              fallbackCoverPath = coverPath;
+            } catch {
+              // No cover available
+            }
+          }
+
+          // Fallback: save as markdown note with image link
+          const fallbackName = deduplicateName(safeBase, ".md");
+          const lines = [
+            "---",
+            `type: image`,
+            `arena_id: ${block.id}`,
+            `url: "${imageUrl}"`,
+            `cover_image: "${fallbackCoverPath}"`,
+            "---",
+            "",
+            `![${safeBase}](${imageUrl})`,
+            "",
+          ];
+          await this.app.vault.create(
+            normalizePath(`${folderPath}/${fallbackName}`),
+            lines.join("\n"),
+          );
+        }
+        break;
+      }
+
+      case "Text": {
+        const fileName = deduplicateName(safeBase, ".md");
+        const lines = [
+          "---",
+          `type: text`,
+          `arena_id: ${block.id}`,
+          "---",
+          "",
+          block.content ?? "",
+          "",
+        ];
+        await this.app.vault.create(
+          normalizePath(`${folderPath}/${fileName}`),
+          lines.join("\n"),
+        );
+        break;
+      }
+
+      case "Link":
+      case "Media": {
+        const fileName = deduplicateName(safeBase, ".md");
+        const sourceUrl = block.source?.url ?? "";
+
+        // Download the Are.na-provided thumbnail/snapshot so the grid can show it
+        const thumbUrl =
+          block.image?.display?.url ?? block.image?.original?.url;
+        let coverImagePath = "";
+        if (thumbUrl) {
+          try {
+            const coverExt =
+              thumbUrl.split("?")[0].match(/\.\w+$/)?.[0] ?? ".jpg";
+            const coverFileName = deduplicateName(`${safeBase}-cover`, coverExt);
+            const coverRes = await requestUrl({ url: thumbUrl, method: "GET" });
+            const coverPath = normalizePath(
+              `${folderPath}/${coverFileName}`,
+            );
+            await this.app.vault.createBinary(coverPath, coverRes.arrayBuffer);
+            coverImagePath = coverPath;
+          } catch {
+            // Continue without cover image
+          }
+        }
+
+        const lines = [
+          "---",
+          `type: ${block.class.toLowerCase()}`,
+          `arena_id: ${block.id}`,
+          `url: "${sourceUrl}"`,
+          `title: "${(block.title ?? "").replace(/"/g, '\\"')}"`,
+          `description: "${(block.description ?? "").replace(/"/g, '\\"')}"`,
+          `cover_image: "${coverImagePath}"`,
+          "---",
+          "",
+          `# [${block.title ?? safeBase}](${sourceUrl})`,
+          "",
+        ];
+        if (block.description) lines.push(`> ${block.description}`, "");
+        await this.app.vault.create(
+          normalizePath(`${folderPath}/${fileName}`),
+          lines.join("\n"),
+        );
+        break;
+      }
+
+      case "Attachment": {
+        const fileName = deduplicateName(safeBase, ".md");
+        const attachUrl = block.attachment?.url ?? "";
+        const lines = [
+          "---",
+          `type: attachment`,
+          `arena_id: ${block.id}`,
+          `attachment_url: "${attachUrl}"`,
+          "---",
+          "",
+          `# ${block.title ?? safeBase}`,
+          "",
+          attachUrl ? `[Download](${attachUrl})` : "",
+          "",
+        ];
+        await this.app.vault.create(
+          normalizePath(`${folderPath}/${fileName}`),
+          lines.join("\n"),
+        );
+        break;
+      }
+
+      case "Channel": {
+        const fileName = deduplicateName(safeBase, ".md");
+        const connectedSlug = block.slug ?? "";
+        const connectedTitle = block.title ?? connectedSlug;
+        const lines = [
+          "---",
+          `type: channel`,
+          `arena_id: ${block.id}`,
+          `arena_slug: "${connectedSlug}"`,
+          `arena_url: "https://www.are.na/${connectedSlug}"`,
+          "---",
+          "",
+          `# ${connectedTitle}`,
+          "",
+          `Connected channel: [${connectedTitle}](https://www.are.na/${connectedSlug})`,
+          "",
+        ];
+        await this.app.vault.create(
+          normalizePath(`${folderPath}/${fileName}`),
+          lines.join("\n"),
+        );
+        break;
+      }
+
+      default: {
+        const fileName = deduplicateName(safeBase, ".md");
+        const lines = [
+          "---",
+          `type: unknown`,
+          `arena_id: ${block.id}`,
+          `arena_class: "${block.class ?? ""}"`,
+          "---",
+          "",
+          `\`\`\`json`,
+          JSON.stringify(block, null, 2),
+          `\`\`\``,
+          "",
+        ];
+        await this.app.vault.create(
+          normalizePath(`${folderPath}/${fileName}`),
+          lines.join("\n"),
+        );
+        break;
+      }
+    }
+  }
+
   refreshViews() {
     this.app.workspace.getLeavesOfType(VIEW_TYPE_ARENA).forEach((leaf) => {
       if (leaf.view instanceof ArenaView) {
@@ -262,12 +647,14 @@ export default class ArenaPlugin extends Plugin {
 
   async migrateCoverImagesToChannelFolders() {
     const root = normalizePath(this.settings.rootFolder);
-    const mdFiles = this.app.vault.getFiles().filter(
-      (f) =>
-        f.extension === "md" &&
-        (f.path === `${root}/${f.name}` || f.path.startsWith(`${root}/`)) &&
-        f.name !== CHANNEL_META_FILE,
-    );
+    const mdFiles = this.app.vault
+      .getFiles()
+      .filter(
+        (f) =>
+          f.extension === "md" &&
+          (f.path === `${root}/${f.name}` || f.path.startsWith(`${root}/`)) &&
+          f.name !== CHANNEL_META_FILE,
+      );
 
     let moved = 0;
     let skipped = 0;
@@ -297,7 +684,9 @@ export default class ArenaPlugin extends Plugin {
       ) {
         const ext = coverFile.extension ? `.${coverFile.extension}` : "";
         const base = coverFile.basename;
-        newCoverPath = normalizePath(`${targetFolder}/${base}-${counter}${ext}`);
+        newCoverPath = normalizePath(
+          `${targetFolder}/${base}-${counter}${ext}`,
+        );
         counter++;
       }
 
@@ -322,7 +711,8 @@ export default class ArenaPlugin extends Plugin {
     }
 
     const parts: string[] = [];
-    if (moved > 0) parts.push(`Moved ${moved} cover image${moved !== 1 ? "s" : ""}`);
+    if (moved > 0)
+      parts.push(`Moved ${moved} cover image${moved !== 1 ? "s" : ""}`);
     if (skipped > 0) parts.push(`${skipped} already in place`);
     if (failed > 0) parts.push(`${failed} failed`);
     new Notice(parts.length ? parts.join(", ") : "No cover images to migrate");
@@ -432,7 +822,9 @@ class ArenaView extends ItemView {
   }
 
   showContextMenuAtPoint(x: number, y: number, menu: Menu) {
-    type MenuWithPosition = Menu & { showAtPosition?: (pos: { x: number; y: number }) => void };
+    type MenuWithPosition = Menu & {
+      showAtPosition?: (pos: { x: number; y: number }) => void;
+    };
     (menu as MenuWithPosition).showAtPosition?.({ x, y });
   }
 
@@ -521,6 +913,13 @@ class ArenaView extends ItemView {
     newBtn.addEventListener("click", () => {
       this.plugin.createChannelDialog();
     });
+    const importBtn = actions.createEl("button", {
+      text: "Import +",
+      cls: "arena-btn",
+    });
+    importBtn.addEventListener("click", () => {
+      this.plugin.importChannelDialog();
+    });
 
     const grid = container.createDiv({ cls: "arena-grid" });
 
@@ -562,7 +961,10 @@ class ArenaView extends ItemView {
 
     // Inner row: parent card on left, items on right
     const innerRow = wrapper.createDiv({ cls: "arena-parent-inner" });
-    innerRow.style.setProperty("--arena-parent-cols", String(PREVIEW_COUNT + 1));
+    innerRow.style.setProperty(
+      "--arena-parent-cols",
+      String(PREVIEW_COUNT + 1),
+    );
 
     // Parent channel square (left side, fixed size)
     const parentCard = innerRow.createDiv({ cls: "arena-parent-card" });
@@ -682,7 +1084,10 @@ class ArenaView extends ItemView {
 
     type AppWithInternals = App & {
       internalPlugins?: {
-        plugins?: Record<string, { instance?: { revealInFolder?: (f: TFolder) => void } }>;
+        plugins?: Record<
+          string,
+          { instance?: { revealInFolder?: (f: TFolder) => void } }
+        >;
       };
     };
     const fileExplorer = (this.app as AppWithInternals).internalPlugins
@@ -833,6 +1238,13 @@ class ArenaView extends ItemView {
     });
     newSubBtn.addEventListener("click", () => {
       this.plugin.createChannelDialog(folder);
+    });
+    const importSubBtn = actions.createEl("button", {
+      text: "Import +",
+      cls: "arena-btn",
+    });
+    importSubBtn.addEventListener("click", () => {
+      this.plugin.importChannelDialog(folder);
     });
 
     // Sub-channels
@@ -1477,7 +1889,8 @@ class ArenaView extends ItemView {
       if (Array.isArray(raw) && raw.length > 0) {
         const first: unknown = raw[0];
         if (typeof first === "object" && first !== null) {
-          const screenshotUrl = (first as Record<string, unknown>).screenshotUrl;
+          const screenshotUrl = (first as Record<string, unknown>)
+            .screenshotUrl;
           if (typeof screenshotUrl === "string") return screenshotUrl;
         }
       }
@@ -1647,8 +2060,8 @@ class ArenaView extends ItemView {
     const coveredPaths = new Set<string>();
     for (const child of folder.children) {
       if (!(child instanceof TFile) || child.extension !== "md") continue;
-      const coverPath = this.app.metadataCache
-        .getFileCache(child)?.frontmatter?.cover_image as string | undefined;
+      const coverPath = this.app.metadataCache.getFileCache(child)?.frontmatter
+        ?.cover_image as string | undefined;
       if (coverPath) coveredPaths.add(coverPath);
     }
 
@@ -1790,6 +2203,58 @@ class CreateChannelModal extends Modal {
   }
 }
 
+// ─── Import Channel Modal ────────────────────────────────────────────────────
+
+class ImportChannelModal extends Modal {
+  onSubmit: (url: string) => void;
+
+  constructor(app: App, onSubmit: (url: string) => void) {
+    super(app);
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl("h2", { text: "Import Are.na channel" });
+
+    let urlValue = "";
+
+    new Setting(contentEl)
+      .setName("Are.na channel URL")
+      .setDesc("Paste the URL of the Are.na channel you want to import.")
+      .addText((text) => {
+        text
+          .setPlaceholder("https://www.are.na/username/channel-slug")
+          .onChange((value) => {
+            urlValue = value;
+          });
+        text.inputEl.addEventListener("keydown", (e: KeyboardEvent) => {
+          if (e.key === "Enter" && urlValue.trim()) {
+            this.onSubmit(urlValue.trim());
+            this.close();
+          }
+        });
+        activeWindow.setTimeout(() => text.inputEl.focus(), 50);
+      });
+
+    new Setting(contentEl).addButton((btn) =>
+      btn
+        .setButtonText("Import")
+        .setCta()
+        .onClick(() => {
+          if (urlValue.trim()) {
+            this.onSubmit(urlValue.trim());
+            this.close();
+          }
+        }),
+    );
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
 // ─── Confirm Modal ───────────────────────────────────────────────────────────
 
 class ConfirmModal extends Modal {
@@ -1910,6 +2375,22 @@ class ArenaSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Are.na access token")
+      .setDesc(
+        "Optional. Required for importing private Are.na channels. Generate one at are.na/settings.",
+      )
+      .addText((text) => {
+        text
+          .setPlaceholder("Are.na personal access token")
+          .setValue(this.plugin.settings.arenaAccessToken)
+          .onChange(async (value) => {
+            this.plugin.settings.arenaAccessToken = value.trim();
+            await this.plugin.saveSettings();
+          });
+        text.inputEl.type = "password";
+      });
+
+    new Setting(containerEl)
       .setName("Apify API token")
       .setDesc(
         "Optional. Used to generate website screenshots as cover images for bookmarks.",
@@ -1931,9 +2412,9 @@ class ArenaSettingTab extends PluginSettingTab {
         "Move any existing cover images stored in the assets folder to sit alongside their notes in the channel folder, and update the frontmatter paths accordingly.",
       )
       .addButton((btn) =>
-        btn
-          .setButtonText("Run migration")
-          .onClick(() => { void this.plugin.migrateCoverImagesToChannelFolders(); }),
+        btn.setButtonText("Run migration").onClick(() => {
+          void this.plugin.migrateCoverImagesToChannelFolders();
+        }),
       );
   }
 }
