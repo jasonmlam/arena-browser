@@ -11,14 +11,21 @@ if you want to view the source, please visit the github repository of this plugi
 
 const prod = process.argv[2] === "production";
 
-// Read .env and build a define map so process.env.* values are inlined at build time.
-const envDefine = {};
+// Read .env and inline values at build time (see __APIFY_TOKEN__ in src/main.ts).
+const envDefine = {
+  __APIFY_TOKEN__: JSON.stringify(""),
+};
 if (fs.existsSync(".env")) {
   const lines = fs.readFileSync(".env", "utf-8").split("\n");
   for (const line of lines) {
     const match = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
     if (match) {
-      envDefine[`process.env.${match[1]}`] = JSON.stringify(match[2].trim());
+      const key = match[1];
+      const value = match[2].trim();
+      envDefine[`process.env.${key}`] = JSON.stringify(value);
+      if (key === "APIFY_TOKEN") {
+        envDefine.__APIFY_TOKEN__ = JSON.stringify(value);
+      }
     }
   }
 }

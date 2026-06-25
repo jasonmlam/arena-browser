@@ -21,6 +21,7 @@
     "@typescript-eslint/parser": "^8.58.0",
     "esbuild": "^0.21.0",
     "eslint": "^9.39.0",
+    "eslint-plugin-obsidianmd": "^0.3.0",
     "obsidian": "latest",
     "tsx": "^4.22.4",
     "typescript": "^5.4.0",

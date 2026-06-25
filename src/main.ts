@@ -38,15 +38,10 @@ const ICON_ARENA = "layout-grid";
 const CHANNEL_META_FILE = "_channel.md";
 
 /** Replaced at build time when `APIFY_TOKEN` is set in `.env` (see esbuild.config.mjs). */
+declare const __APIFY_TOKEN__: string | undefined;
 function apifyTokenFromBuild(): string {
-  if (typeof process === "undefined") return "";
-  try {
-    // esbuild replaces `process.env.APIFY_TOKEN` when present in `.env`
-    const t = process.env.APIFY_TOKEN;
-    return typeof t === "string" ? t.trim() : "";
-  } catch {
-    return "";
-  }
+  const t = typeof __APIFY_TOKEN__ !== "undefined" ? __APIFY_TOKEN__ : "";
+  return typeof t === "string" ? t.trim() : "";
 }
 
 const DEFAULT_SETTINGS: ArenaPluginSettings = {
@@ -718,6 +713,144 @@ export default class ArenaPlugin extends Plugin {
     new Notice(parts.length ? parts.join(", ") : "No cover images to migrate");
     this.refreshViews();
   }
+
+  /**
+   * Scan all Are.na-imported blocks in the root folder that are missing a cover
+   * image and attempt to fetch one from the Are.na API using each block's
+   * `arena_id`. Works for `link`, `media`, and `image` (fallback-note) blocks.
+   *
+   * Blocks without an `arena_id` (manually added notes) are skipped — there is
+   * no reliable way to map them to an Are.na block. The Are.na `/v2/blocks/:id`
+   * endpoint returns the original block data including any snapshot/thumbnail
+   * image that Are.na captured, so no URL search is needed.
+   */
+  async refreshMissingArenaCovers(): Promise<void> {
+    const root = normalizePath(this.settings.rootFolder);
+
+    // Collect all candidate .md files
+    const candidates = this.app.vault.getFiles().filter((f) => {
+      if (f.extension !== "md") return false;
+      if (f.name === CHANNEL_META_FILE) return false;
+      if (!f.path.startsWith(`${root}/`)) return false;
+      const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+      if (!fm) return false;
+      const type = fm.type as string | undefined;
+      if (!["link", "media", "image"].includes(type ?? "")) return false;
+      const arenaId = fm.arena_id as number | string | undefined;
+      if (!arenaId) return false;
+      // Consider "missing" when: field absent, empty string, or file gone
+      const coverPath = fm.cover_image as string | undefined;
+      if (coverPath) {
+        const exists = getFileByPath(this.app.vault, coverPath);
+        if (exists) return false; // already has a valid cover
+      }
+      return true;
+    });
+
+    if (candidates.length === 0) {
+      new Notice("No Are.na blocks need a cover image refresh.");
+      return;
+    }
+
+    new Notice(
+      `Refreshing covers for ${candidates.length} block${candidates.length !== 1 ? "s" : ""}…`,
+    );
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.settings.arenaAccessToken) {
+      headers["Authorization"] = `Bearer ${this.settings.arenaAccessToken}`;
+    }
+
+    let fetched = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (let i = 0; i < candidates.length; i++) {
+      const file = candidates[i];
+      if (i > 0 && i % 10 === 0) {
+        new Notice(`Refreshing covers… ${i} / ${candidates.length}`);
+      }
+
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      const arenaId = fm?.arena_id as number | string | undefined;
+      if (!arenaId) continue;
+
+      try {
+        const res = await requestUrl({
+          url: `https://api.are.na/v2/blocks/${arenaId}`,
+          headers,
+        });
+        const block = res.json as ArenaBlock;
+
+        const thumbUrl =
+          block.image?.display?.url ?? block.image?.original?.url;
+        if (!thumbUrl) {
+          skipped++;
+          continue;
+        }
+
+        // Download the image next to the note
+        const coverExt =
+          thumbUrl.split("?")[0].match(/\.\w+$/)?.[0] ?? ".jpg";
+        const baseName = file.basename;
+        let coverPath = normalizePath(
+          `${file.parent!.path}/${baseName}-cover${coverExt}`,
+        );
+        // Avoid overwriting an unrelated file
+        let counter = 1;
+        while (this.app.vault.getAbstractFileByPath(coverPath)) {
+          coverPath = normalizePath(
+            `${file.parent!.path}/${baseName}-cover-${counter}${coverExt}`,
+          );
+          counter++;
+        }
+
+        const imgRes = await requestUrl({ url: thumbUrl, method: "GET" });
+        await this.app.vault.createBinary(coverPath, imgRes.arrayBuffer);
+
+        // Update or insert cover_image in the note's frontmatter
+        const raw = await this.app.vault.read(file);
+        let updated: string;
+        if (/^cover_image:/m.test(raw)) {
+          updated = raw.replace(
+            /^cover_image:.*$/m,
+            `cover_image: "${coverPath}"`,
+          );
+        } else {
+          // Insert before the closing --- of the frontmatter block
+          updated = raw.replace(
+            /^(---\n[\s\S]*?)(---)/m,
+            `$1cover_image: "${coverPath}"\n$2`,
+          );
+        }
+        if (updated !== raw) {
+          await this.app.vault.modify(file, updated);
+        }
+
+        fetched++;
+      } catch {
+        failed++;
+      }
+    }
+
+    const parts: string[] = [];
+    if (fetched > 0)
+      parts.push(`Added ${fetched} cover image${fetched !== 1 ? "s" : ""}`);
+    if (skipped > 0)
+      parts.push(
+        `${skipped} block${skipped !== 1 ? "s" : ""} had no image in Are.na`,
+      );
+    if (failed > 0)
+      parts.push(`${failed} failed`);
+
+    new Notice(
+      parts.length ? parts.join(", ") : "No covers updated.",
+      6000,
+    );
+    this.refreshViews();
+  }
 }
 
 // ─── Arena View ──────────────────────────────────────────────────────────────
@@ -758,10 +891,10 @@ class ArenaView extends ItemView {
     await super.onOpen();
     this.render();
 
-    let refreshTimer: ReturnType<typeof activeWindow.setTimeout> | null = null;
+    let refreshTimer: number | null = null;
     const debouncedRender = () => {
-      if (refreshTimer) activeWindow.clearTimeout(refreshTimer);
-      refreshTimer = activeWindow.setTimeout(() => this.render(), 200);
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => this.render(), 200);
     };
 
     this.registerEvent(this.app.vault.on("create", debouncedRender));
@@ -781,14 +914,14 @@ class ArenaView extends ItemView {
   // ── Touch helpers ──────────────────────────────────────────────────────────
 
   addLongPress(el: HTMLElement, callback: (e: TouchEvent) => void, ms = 500) {
-    let timer: ReturnType<typeof activeWindow.setTimeout> | null = null;
+    let timer: number | null = null;
     let moved = false;
 
     el.addEventListener(
       "touchstart",
       (e) => {
         moved = false;
-        timer = activeWindow.setTimeout(() => {
+        timer = window.setTimeout(() => {
           if (!moved) {
             e.preventDefault();
             callback(e);
@@ -801,21 +934,21 @@ class ArenaView extends ItemView {
     el.addEventListener("touchmove", () => {
       moved = true;
       if (timer) {
-        activeWindow.clearTimeout(timer);
+        window.clearTimeout(timer);
         timer = null;
       }
     });
 
     el.addEventListener("touchend", () => {
       if (timer) {
-        activeWindow.clearTimeout(timer);
+        window.clearTimeout(timer);
         timer = null;
       }
     });
 
     el.addEventListener("touchcancel", () => {
       if (timer) {
-        activeWindow.clearTimeout(timer);
+        window.clearTimeout(timer);
         timer = null;
       }
     });
@@ -2182,7 +2315,7 @@ class CreateChannelModal extends Modal {
           this.close();
         }
       });
-      activeWindow.setTimeout(() => text.inputEl.focus(), 50);
+      window.setTimeout(() => text.inputEl.focus(), 50);
     });
 
     new Setting(contentEl).addButton((btn) =>
@@ -2224,7 +2357,7 @@ class ImportChannelModal extends Modal {
       .setDesc("Paste the URL of the Are.na channel you want to import.")
       .addText((text) => {
         text
-          .setPlaceholder("https://www.are.na/username/channel-slug")
+          .setPlaceholder("HTTPS://www.are.na/username/channel-slug")
           .onChange((value) => {
             urlValue = value;
           });
@@ -2234,7 +2367,7 @@ class ImportChannelModal extends Modal {
             this.close();
           }
         });
-        activeWindow.setTimeout(() => text.inputEl.focus(), 50);
+        window.setTimeout(() => text.inputEl.focus(), 50);
       });
 
     new Setting(contentEl).addButton((btn) =>
@@ -2405,6 +2538,17 @@ class ArenaSettingTab extends PluginSettingTab {
           });
         text.inputEl.type = "password";
       });
+
+    new Setting(containerEl)
+      .setName("Refresh Are.na cover images")
+      .setDesc(
+        "Scan all Are.na-imported blocks (link, media, image) that are missing a cover image and fetch one from the Are.na API using each block's arena_id. Useful for channels imported before cover-image support was added. Blocks without an arena_id (manually added notes) are skipped.",
+      )
+      .addButton((btn) =>
+        btn.setButtonText("Refresh missing covers").onClick(() => {
+          void this.plugin.refreshMissingArenaCovers();
+        }),
+      );
 
     new Setting(containerEl)
       .setName("Migrate cover images")
