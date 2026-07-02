@@ -250,9 +250,10 @@
 }
 
 .arena-parent-inner {
+  --arena-parent-gap: 16px;
   display: grid;
   grid-template-columns: repeat(var(--arena-parent-cols, 1), minmax(0, 1fr));
-  gap: 16px;
+  gap: var(--arena-parent-gap);
 }
 
 /* Parent card: same size as a regular channel card */
@@ -290,9 +291,12 @@
   gap: 2px;
 }
 
-/* Sub-channels flow into the same grid as the parent card */
+/* Sub-channels share the parent row's right-hand columns */
 .arena-parent-sub-grid {
-  display: contents;
+  grid-column: 2 / -1;
+  display: grid;
+  grid-template-columns: repeat(var(--arena-parent-preview-cols, 1), minmax(0, 1fr));
+  gap: var(--arena-parent-gap);
 }
 
 .arena-sub-channel-card {
@@ -508,8 +512,9 @@
 
 /* ─── Drag and Drop ───────────────────────────────────────────────────────── */
 
-.arena-drop-active {
-  outline: 2px dashed var(--interactive-accent) !important;
+.arena-card.arena-drop-active,
+.arena-drop-zone.arena-drop-active {
+  outline: 2px dashed var(--interactive-accent);
   outline-offset: -2px;
   opacity: 0.85;
 }
@@ -574,8 +579,11 @@
 
 /* ─── Drop Zone ───────────────────────────────────────────────────────────── */
 
-.arena-drop-zone {
-  border: 1.5px dashed var(--background-modifier-border) !important;
+.arena-drop-zone.arena-block-card {
+  --arena-drop-zone-border-style: dashed;
+  --arena-drop-zone-border-color: var(--background-modifier-border);
+  border: 1.5px var(--arena-drop-zone-border-style)
+    var(--arena-drop-zone-border-color);
   background: var(--background-primary);
   cursor: pointer;
   aspect-ratio: 1 / 1;
@@ -636,9 +644,9 @@
   display: flex;
 }
 
-.arena-drop-zone-editing {
-  border-style: solid !important;
-  border-color: var(--background-modifier-border) !important;
+.arena-drop-zone.arena-block-card.arena-drop-zone-editing {
+  --arena-drop-zone-border-style: solid;
+  --arena-drop-zone-border-color: var(--background-modifier-border);
   cursor: text;
 }
 
@@ -682,8 +690,8 @@
   animation: arena-pulse 1.2s ease-in-out infinite;
 }
 
-.arena-drop-zone-success {
-  border-color: var(--color-green) !important;
+.arena-drop-zone.arena-block-card.arena-drop-zone-success {
+  --arena-drop-zone-border-color: var(--color-green);
 }
 
 .arena-drop-zone-success .arena-drop-zone-hint-bar {
@@ -703,10 +711,10 @@
 
 /* ─── Pending Block (loading placeholder) ──────────────────────────────────── */
 
-.arena-block-pending {
+.arena-card.arena-block-card.arena-block-pending {
   pointer-events: none;
-  border-style: solid !important;
-  border-color: var(--background-modifier-border) !important;
+  border-style: solid;
+  border-color: var(--background-modifier-border);
   background: var(--background-primary);
 }
 
@@ -783,17 +791,17 @@
 }
 
 /* Hover / active / drag-active */
-.arena-drop-zone:hover {
-  border-color: var(--text-muted) !important;
+.arena-drop-zone.arena-block-card:hover {
+  --arena-drop-zone-border-color: var(--text-muted);
   transform: none;
 }
 
-.arena-drop-zone:active {
+.arena-drop-zone.arena-block-card:active {
   transform: none;
 }
 
-.arena-drop-zone.arena-drop-active {
-  border-color: var(--interactive-accent) !important;
+.arena-drop-zone.arena-block-card.arena-drop-active {
+  --arena-drop-zone-border-color: var(--interactive-accent);
   background: var(--background-primary-alt);
 }
 
@@ -898,7 +906,7 @@
 
 .is-mobile .arena-parent-inner {
   --arena-min-card: 160px;
-  gap: 10px;
+  --arena-parent-gap: 10px;
 }
 
 .is-mobile .arena-parent-info {
@@ -1019,6 +1027,6 @@
   }
 
   .is-mobile .arena-parent-inner {
-    gap: 8px;
+    --arena-parent-gap: 8px;
   }
 }

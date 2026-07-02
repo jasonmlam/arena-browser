@@ -1098,6 +1098,10 @@ class ArenaView extends ItemView {
       "--arena-parent-cols",
       String(PREVIEW_COUNT + 1),
     );
+    innerRow.style.setProperty(
+      "--arena-parent-preview-cols",
+      String(PREVIEW_COUNT),
+    );
 
     // Parent channel square (left side, fixed size)
     const parentCard = innerRow.createDiv({ cls: "arena-parent-card" });
@@ -2410,7 +2414,7 @@ class ConfirmModal extends Modal {
       .addButton((btn) =>
         btn
           .setButtonText("Delete")
-          .setWarning()
+          .setDestructive()
           .onClick(() => {
             this.onConfirm();
             this.close();
@@ -2433,132 +2437,131 @@ class ArenaSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
-  display() {
-    const { containerEl } = this;
-    containerEl.empty();
+  override async setControlValue(
+    key: string,
+    value: unknown,
+  ): Promise<void> {
+    if (key === "rootFolder") {
+      this.plugin.settings.rootFolder =
+        typeof value === "string" && value.trim() ? value.trim() : "arena";
+      await this.plugin.saveSettings();
+      this.update();
+      return;
+    }
+    if (key === "showAssetsInBrowser") {
+      this.plugin.settings.showAssetsInBrowser = Boolean(value);
+      await this.plugin.saveSettings();
+      this.plugin.refreshViews();
+      return;
+    }
+    await super.setControlValue(key, value);
+  }
 
-    new Setting(containerEl)
-      .setName("Root folder")
-      .setDesc("The vault folder that contains your channels")
-      .addText((text) =>
-        text
-          .setPlaceholder("Arena")
-          .setValue(this.plugin.settings.rootFolder)
-          .onChange(async (value) => {
-            this.plugin.settings.rootFolder = value || "arena";
-            await this.plugin.saveSettings();
-            this.display();
-          }),
-      );
-
+  getSettingDefinitions() {
     const defaultAssetsHint = normalizePath(
       `${this.plugin.settings.rootFolder}/assets`,
     );
 
-    new Setting(containerEl)
-      .setName("Assets folder")
-      .setDesc(
-        "Where bookmark cover images are stored (vault path). Leave empty to use the default path shown as the placeholder. Type to filter folders, or use browse.",
-      )
-      .addText((text) => {
-        text
-          .setPlaceholder(defaultAssetsHint)
-          .setValue(this.plugin.settings.assetsFolder);
-        const suggest = new FolderPathSuggest(this.app, text.inputEl);
-        suggest.onSelect(async (value) => {
-          this.plugin.settings.assetsFolder = value;
-          await this.plugin.saveSettings();
-        });
-        text.onChange(async (value) => {
-          this.plugin.settings.assetsFolder = value.trim();
-          await this.plugin.saveSettings();
-        });
-      })
-      .addExtraButton((btn) =>
-        btn
-          .setIcon("folder")
-          .setTooltip("Browse folders")
-          .onClick(() => {
-            const modal = new PickFolderModal(
-              this.app,
-              collectFolderPaths(this.app.vault.getRoot()),
-              (path) => {
-                this.plugin.settings.assetsFolder = path;
-                void this.plugin.saveSettings();
-                this.display();
-              },
-            );
-            modal.open();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Show assets folder")
-      .setDesc(
-        "When off, the assets folder is omitted from the channel list. Turn on to open and manage cover images like any other channel.",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.showAssetsInBrowser)
-          .onChange(async (value) => {
-            this.plugin.settings.showAssetsInBrowser = value;
-            await this.plugin.saveSettings();
-            this.plugin.refreshViews();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Are.na access token")
-      .setDesc(
-        "Optional. Required for importing private Are.na channels. Generate one at are.na/settings.",
-      )
-      .addText((text) => {
-        text
-          .setPlaceholder("Are.na personal access token")
-          .setValue(this.plugin.settings.arenaAccessToken)
-          .onChange(async (value) => {
-            this.plugin.settings.arenaAccessToken = value.trim();
-            await this.plugin.saveSettings();
+    return [
+      {
+        name: "Root folder",
+        desc: "The vault folder that contains your channels",
+        control: {
+          type: "text" as const,
+          key: "rootFolder",
+        },
+      },
+      {
+        name: "Assets folder",
+        desc: "Where bookmark cover images are stored (vault path). Leave empty to use the default path shown as the placeholder. Type to filter folders, or use browse.",
+        render: (setting: Setting) => {
+          setting.addText((text) => {
+            text
+              .setPlaceholder(defaultAssetsHint)
+              .setValue(this.plugin.settings.assetsFolder);
+            const suggest = new FolderPathSuggest(this.app, text.inputEl);
+            suggest.onSelect(async (value) => {
+              this.plugin.settings.assetsFolder = value;
+              await this.plugin.saveSettings();
+            });
+            text.onChange(async (value) => {
+              this.plugin.settings.assetsFolder = value.trim();
+              await this.plugin.saveSettings();
+            });
           });
-        text.inputEl.type = "password";
-      });
-
-    new Setting(containerEl)
-      .setName("Apify API token")
-      .setDesc(
-        "Optional. Used to generate website screenshots as cover images for bookmarks.",
-      )
-      .addText((text) => {
-        text
-          .setPlaceholder("Apify API token")
-          .setValue(this.plugin.settings.apifyToken)
-          .onChange(async (value) => {
-            this.plugin.settings.apifyToken = value.trim();
-            await this.plugin.saveSettings();
+          setting.addExtraButton((btn) =>
+            btn
+              .setIcon("folder")
+              .setTooltip("Browse folders")
+              .onClick(() => {
+                const modal = new PickFolderModal(
+                  this.app,
+                  collectFolderPaths(this.app.vault.getRoot()),
+                  (path) => {
+                    this.plugin.settings.assetsFolder = path;
+                    void this.plugin.saveSettings();
+                    this.update();
+                  },
+                );
+                modal.open();
+              }),
+          );
+        },
+      },
+      {
+        name: "Show assets folder",
+        desc: "When off, the assets folder is omitted from the channel list. Turn on to open and manage cover images like any other channel.",
+        control: {
+          type: "toggle" as const,
+          key: "showAssetsInBrowser",
+        },
+      },
+      {
+        name: "Are.na access token",
+        desc: "Optional. Required for importing private Are.na channels. Generate one at are.na/settings.",
+        render: (setting: Setting) => {
+          setting.addText((text) => {
+            text
+              .setPlaceholder("Are.na personal access token")
+              .setValue(this.plugin.settings.arenaAccessToken)
+              .onChange(async (value) => {
+                this.plugin.settings.arenaAccessToken = value.trim();
+                await this.plugin.saveSettings();
+              });
+            text.inputEl.type = "password";
           });
-        text.inputEl.type = "password";
-      });
-
-    new Setting(containerEl)
-      .setName("Refresh Are.na cover images")
-      .setDesc(
-        "Scan all Are.na-imported blocks (link, media, image) that are missing a cover image and fetch one from the Are.na API using each block's arena_id. Useful for channels imported before cover-image support was added. Blocks without an arena_id (manually added notes) are skipped.",
-      )
-      .addButton((btn) =>
-        btn.setButtonText("Refresh missing covers").onClick(() => {
+        },
+      },
+      {
+        name: "Apify API token",
+        desc: "Optional. Used to generate website screenshots as cover images for bookmarks.",
+        render: (setting: Setting) => {
+          setting.addText((text) => {
+            text
+              .setPlaceholder("Apify API token")
+              .setValue(this.plugin.settings.apifyToken)
+              .onChange(async (value) => {
+                this.plugin.settings.apifyToken = value.trim();
+                await this.plugin.saveSettings();
+              });
+            text.inputEl.type = "password";
+          });
+        },
+      },
+      {
+        name: "Refresh Are.na cover images",
+        desc: "Scan all Are.na-imported blocks (link, media, image) that are missing a cover image and fetch one from the Are.na API using each block's arena_id. Useful for channels imported before cover-image support was added. Blocks without an arena_id (manually added notes) are skipped.",
+        action: () => {
           void this.plugin.refreshMissingArenaCovers();
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName("Migrate cover images")
-      .setDesc(
-        "Move any existing cover images stored in the assets folder to sit alongside their notes in the channel folder, and update the frontmatter paths accordingly.",
-      )
-      .addButton((btn) =>
-        btn.setButtonText("Run migration").onClick(() => {
+        },
+      },
+      {
+        name: "Migrate cover images",
+        desc: "Move any existing cover images stored in the assets folder to sit alongside their notes in the channel folder, and update the frontmatter paths accordingly.",
+        action: () => {
           void this.plugin.migrateCoverImagesToChannelFolders();
-        }),
-      );
+        },
+      },
+    ];
   }
 }

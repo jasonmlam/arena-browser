@@ -2,7 +2,7 @@
   "id": "arena-browser",
   "name": "Arena Browser",
   "version": "1.0.1",
-  "minAppVersion": "1.7.2",
+  "minAppVersion": "1.13.0",
   "description": "Browse your vault with Are.na inspired channels and blocks - a visual interface to reference and organize files.",
   "author": "Jason",
   "isDesktopOnly": false
