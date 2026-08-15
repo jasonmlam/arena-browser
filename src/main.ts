@@ -1070,20 +1070,19 @@ class ArenaView extends ItemView {
   }
 
   renderParentChannelCard(parent: HTMLElement, channel: ChannelInfo) {
-    // Outer bordered rectangle that wraps the parent + sub-channels
+    // Outer bordered rectangle that wraps the parent + preview cards
     const wrapper = parent.createDiv({ cls: "arena-parent-row" });
 
-    // Compute how many columns fit so preview items never wrap to a new line.
-    // The parent card occupies one slot; remaining slots hold preview items.
+    // Fit as many fixed-size cards as will fit on one row.
     const isMobile = Platform.isMobile;
     const rowWidth = wrapper.clientWidth || parent.clientWidth || 800;
     const innerPadding = isMobile ? 24 : 32; // padding: 12px or 16px per side
-    const minCard = isMobile ? 160 : 220;
+    const cardSize = isMobile ? 160 : 220;
     const gap = isMobile ? 10 : 16;
     const availableWidth = rowWidth - innerPadding;
     const cols = Math.max(
       1,
-      Math.floor((availableWidth + gap) / (minCard + gap)),
+      Math.floor((availableWidth + gap) / (cardSize + gap)),
     );
     const PREVIEW_COUNT = Math.max(0, cols - 1);
 
@@ -1094,14 +1093,8 @@ class ArenaView extends ItemView {
 
     // Inner row: parent card on left, items on right
     const innerRow = wrapper.createDiv({ cls: "arena-parent-inner" });
-    innerRow.style.setProperty(
-      "--arena-parent-cols",
-      String(PREVIEW_COUNT + 1),
-    );
-    innerRow.style.setProperty(
-      "--arena-parent-preview-cols",
-      String(PREVIEW_COUNT),
-    );
+    innerRow.style.setProperty("--arena-parent-card-size", `${cardSize}px`);
+    innerRow.style.setProperty("--arena-parent-gap", `${gap}px`);
 
     // Parent channel square (left side, fixed size)
     const parentCard = innerRow.createDiv({ cls: "arena-parent-card" });

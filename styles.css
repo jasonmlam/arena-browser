@@ -144,6 +144,8 @@
   overflow: hidden;
   cursor: pointer;
   aspect-ratio: 1 / 1;
+  min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   transition:
@@ -251,14 +253,20 @@
 
 .arena-parent-inner {
   --arena-parent-gap: 16px;
-  display: grid;
-  grid-template-columns: repeat(var(--arena-parent-cols, 1), minmax(0, 1fr));
+  --arena-parent-card-size: var(--arena-min-card, 220px);
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
   gap: var(--arena-parent-gap);
+  align-items: flex-start;
 }
 
-/* Parent card: same size as a regular channel card */
+/* Parent card: fixed square, same size as preview cards */
 .arena-parent-card {
-  aspect-ratio: 1 / 1;
+  width: var(--arena-parent-card-size);
+  height: var(--arena-parent-card-size);
+  flex: 0 0 var(--arena-parent-card-size);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -291,16 +299,32 @@
   gap: 2px;
 }
 
-/* Sub-channels share the parent row's right-hand columns */
+/* Preview cards sit in a fixed-size row matching the parent card */
 .arena-parent-sub-grid {
-  grid-column: 2 / -1;
-  display: grid;
-  grid-template-columns: repeat(var(--arena-parent-preview-cols, 1), minmax(0, 1fr));
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
   gap: var(--arena-parent-gap);
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.arena-parent-sub-grid > .arena-card,
+.arena-parent-sub-grid > .arena-sub-channel-card,
+.arena-parent-sub-grid > .arena-sub-channel-empty {
+  width: var(--arena-parent-card-size);
+  height: var(--arena-parent-card-size);
+  flex: 0 0 var(--arena-parent-card-size);
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: auto;
 }
 
 .arena-sub-channel-card {
-  aspect-ratio: 1 / 1;
+  width: var(--arena-parent-card-size);
+  height: var(--arena-parent-card-size);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -358,6 +382,7 @@
 
 .arena-block-preview {
   flex: 1;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -367,6 +392,8 @@
 }
 
 .arena-block-image {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -453,6 +480,7 @@
 .arena-block-label {
   padding: 10px 14px;
   border-top: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
 }
 
 /* Platform badge (SPOTIFY / SOUNDCLOUD) shown on cover art */
@@ -905,20 +933,12 @@
 }
 
 .is-mobile .arena-parent-inner {
-  --arena-min-card: 160px;
+  --arena-parent-card-size: 160px;
   --arena-parent-gap: 10px;
 }
 
 .is-mobile .arena-parent-info {
   padding: 10px 12px;
-}
-
-.is-mobile .arena-parent-card {
-  aspect-ratio: 1 / 1;
-}
-
-.is-mobile .arena-sub-channel-card {
-  aspect-ratio: 1 / 1;
 }
 
 .is-mobile .arena-sub-channel-info {
@@ -1013,7 +1033,7 @@
 
 /* Phone-sized screens */
 .is-phone .arena-parent-inner {
-  --arena-min-card: 140px;
+  --arena-parent-card-size: 140px;
 }
 
 /* Very narrow viewports */
