@@ -1,6 +1,6 @@
 {
   "name": "arena-browser",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Browse vault folders as Are.na-style channels and blocks",
   "main": "main.js",
   "scripts": {
